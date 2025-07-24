@@ -1,0 +1,439 @@
+1.25 - 2025-03-04
+	- Add support for IP to country lookups through libloc
+	- Add `location_db` config option
+	- Indicate GeoIP support in `--version`
+
+1.24.1 - 2024-07-18
+	- Fix compilation with -Wincompatible-pointer-types
+
+1.24 - 2024-01-07
+	- Add 'u' key to file browser to sort non-local files first
+	- Fix active mode sometimes breaking on FreeBSD
+	- Fix possible crash on aarch64 when connected to an ADC hub
+	- Slightly improve ADC protocol compliance
+	- Slightly improve C compiler compatibility
+
+1.23.1 - 2022-09-27
+	- Fix buffer overflow on connections tab for incoming IPv6 connections in handshake phase
+
+1.23 - 2022-05-30
+	- Bump minimum glib version to 2.32
+	- Re-open GeoIP database on SIGUSR1
+	- Add tls_policy=force setting
+	- Fix TLS on Verlihub
+	- Various minor language fixes
+	- Add workaround rare compiler bug for aarch64
+
+1.22.1 - 2019-06-03
+	- Fix segfault with ADC client connections
+
+1.22 - 2019-04-30
+	- Add 'b' and 'B' keys to connections tab (Daniel Kamil Kozar)
+	- Add 'max_ul_per_user' setting to support multiple upload slots per user (Daniel Kamil Kozar)
+	- Add support for TLS ALPN (Denys Smirnov)
+	- Fix build against ncurses with separate libtinfo (Lars Wendler)
+
+1.21 - 2019-03-26
+	- Switch to libmaxminddb for GeoIP lookups
+	- Replaced 'geoip_cc4' and 'geoip_cc6' settings with a single 'geoip_cc'
+	- Mark already queued or shared files in search and file browser (Daniel Kamil Kozar)
+	- Add 'download_shared' setting (Daniel Kamil Kozar)
+	- Add 'show_free_slots' setting (Daniel Kamil Kozar)
+	- Add support for the "Free Slots" ADC extension
+
+1.20 - 2016-12-30
+	- Support bracketed paste mode in input handling (cologic)
+	- Add 'geoip_cc4' and 'geoip_cc6' settings
+	- Add 'log_hubchat' setting
+	- Add 'local' option to 'active_ip' setting
+	- Add support for multistream bzip2 filelists
+	- Disable RC4 ciphers by default from tls_priority
+	- Fix potential null pointer deference
+	- Fix chmod of destination directories (Johannes Beisswenger)
+
+1.19.1 - 2014-04-23
+	- Fix remote null pointer dereference
+	- Searching now works in the search results list
+	- Fix possible file corruption when moving file to destination
+	- Fix error handling when finalizing a file download
+	- Fix downloading of 0-byte files
+	- Fix extremely slow /gc
+	- Fix sendfile() with large files on 32-bit Linux
+	- Fix minor display issue with multicolumn characters
+
+1.19 - 2014-02-11
+	- Add search functionality to the file browser and user list (/,. keys)
+	- Add geoip support (requires --with-geoip at configure)
+	- Add 'download_segment' setting to change minimum segment size
+	- Log hashing progress to stderr.log
+	- Fix three (potential) security vulnerabilities
+	- Fix downloading of file lists when other user has no free slots
+
+1.18.1 - 2013-10-05
+	- Fix crash when downloading files from multiple sources
+	- Use the yxml library to parse files.xml.bz2 files
+	- Fix various XML conformance bugs in parsing files.xml.bz2 files
+
+1.18 - 2013-09-25
+	- Add support for segmented downloading
+	- Support $MyINFO without flags byte on NMDC hubs
+	- Don't require pod2man on build
+	- Fix tab-completion of nick names when full nick is specified
+	- Fix cursor position on selected line in listings
+	- Fix bug with schema-less /connect
+
+1.17 - 2013-06-15
+	- Add 'q' key to user list for matching a users' files with download queue
+	- Add transfers.log format documentation to manual page
+	- Consider non-alphanumeric characters as word separators in input line
+	- Fix outgoing UDP messages to respect local_address setting
+	- Fix Alt+Backspace on xterm-like terminals
+	- Fix handling of "." and ".." file/directory names in files.xml.bz2
+	- Fix possible crash when receiving unexpected encrypted search results
+	- Fix sendfile() handling to use fallback on EOVERFLOW
+	- Fix possible crash when logging UDP messages
+
+1.16.1 - 2013-03-23
+	- Fix crash when opening connection on ADC in passive mode
+	- Fix documentation of 'd' key in download_exclude setting
+
+1.16 - 2013-03-21
+	- List of granted users is now remembered across restarts
+	- Don't throttle users who are granted a slot
+	- Support CIDs of variable size on ADC
+	- Log, but otherwise ignore, DSTA messages on ADC
+	- Fix possible crash with graceful disconnect on C-C connections
+	- Fix bug with enabling active mode when active_ip is set
+	- Fix reporting of active mode on NMDC hubs
+	- Fix bug with the 'X' key on the queue tab
+	- Fix idle disconnect timeout when a file transfer is active
+
+1.15 - 2013-03-02
+	- IPv6 support
+	- Significantly shorten certificate creation time with old GnuTLS versions
+	- Always enable tls_policy and sudp_policy by default
+	- Link against libgcrypt if detected GnuTLS is older than 3.0
+	- Add color_tab_active setting
+	- Remove active_tls_port setting
+	- Allow '-', '.' and '_' characters in hub names
+	- Allow spaces before a command
+	- Add Alt+backspace as alias for Ctrl+w
+	- Add throttle for 'CGET tthl' requests
+	- Don't throw away PMs from unknown users
+	- Recognize mode field in $MyINFO without tag
+	- Fix possible crash with C-C TLS and old GnuTLS versions
+	- Fix old references to the removed ncdc-db-upgrade utility
+	- Fix loading of file lists from Shareaza 2.6.0.0 and earlier
+	- Fix handling of tab and carriage return in log window
+	- Fix changing of download_dir/incoming_dir if either dir has been deleted
+	- Fix compilation against glib < 2.26
+	- Fix unclean C-C TLS disconnect on timeout
+
+1.14 - 2012-11-04
+	- Added BLOM support for ADC ('/hset adc_blom true' to enable it)
+	- Added section on connection settings to man page
+	- Fix incorrect char signedness assumption on ARM
+	- Fix possible crash when downloading small files
+	- Fix hub counts reported to the hub on login on ADC
+	- Fix local time display issue when built against musl (0.9.6)
+	- Removed legacy ncdc-db-upgrade utility
+
+1.13 - 2012-08-16
+	- zlib library added as a required dependency
+	- Purge empty directories from share by default
+	- Added "share_emptydirs" setting
+	- Disable tls_policy by default when using an old GnuTLS version
+	- Improved support for group chat
+	- Honor G_FILENAME_ENCODING for path autocomplete, /share and queued files
+	- Use a default connection string on NMDC if no 'connection' has been set
+	- Support ZLIG for partial file list transfers on ADC
+	- Send more subdirectories in partial file list transfers
+	- Removed use of system-provided realpath()
+	- Don't allow /search with an empty string
+	- Fix segfault on /search command without query
+	- Fix display of 'sudp_policy' setting if SUDP is not supported
+	- Fix --enable-git-version when cross-compiling
+
+1.12 - 2012-07-10
+	- Don't follow symlinks in share by default
+	- Added 'share_symlink' option
+	- Added bell notification and 'notify_bell' option
+	- Added 'sudp_policy' setting
+	- List all configured hubs on '/open'
+	- Added '/delhub' command to remove hub configuration
+	- Added filtering options to connections tab
+	- Added TLS support indication to user list
+	- Added Alt+a key to cycle through tabs with recent activity
+	- Allow binding to ports below 1024
+	- Add space after autocompleting a command
+	- Fix uploading chunks of 2GiB and larger (bug #12)
+	- Fix bug with duplicate directory detection in '/share'
+	- Fix display of timer on search tab
+	- ADC: Use shorter search token to save some bandwidth
+	- Various attempts at cleaning up some code
+
+1.11 - 2012-05-15
+	- Drop libxml2 in favour of custom XML parser & writer
+	- Allow using a single listen port for TCP and TLS
+	- Added support for encrypted UDP messages (ADC SUDP)
+	- Included 'makeheaders' in the distribution
+	- Removed GNU-specific extensions from the Makefile
+	- Fix /disconnect to cancel automatic reconnect
+	- Fix loading of file lists with invalid UTF-8 sequences
+	- Fix ncurses detection on OpenIndiana
+	- Fix use of TLS in passive mode on ADC
+	- Fix configure warning when git could not be found
+
+1.10 - 2012-05-03
+	- Rewrote network backend to use plain sockets instead of GIO
+	- Added GnuTLS as required dependency
+	- Removed GIO and glib-networking dependencies
+	- Removed 'ncdc-gen-cert' utility - ncdc can now generate certs by itself
+	- Enable client-to-client TLS by default
+	- Added 'tls_priority' setting
+	- Added 'reconnect_timeout' setting
+	- Don't quit ncdc on Ctrl+C
+	- Display age of file list in the title bar
+	- Don't build the 'ncdc-db-upgrade' tool by default
+	- Switched to a single top-level Makefile
+	- Fix '/browse user -f' ('-f' argument after username)
+	- Fix hub login when it checks for public hubs = 0
+	- Fix overflow of long tab titles
+	- Fix loading of microdc2-generated file lists
+	- Fix loading of file lists with an invalid character
+	- Fix occasional crash when TLS is enabled
+	- Fix transfer rate indication and limiting with TLS connections
+	- Fix small memory leak when 'upload_rate' is set
+
+1.9 - 2012-03-14
+	- Allow all 'active_' settings to be changed on a per-hub basis
+	- Allow 'active_ip' to be unset and automatically get IP from hub
+	- Added 'active_udp_port' and 'active_tcp_port' settings
+	- Renamed 'active_bind' to 'local_address' and use it for outgoing
+	  connections as well
+	- Display connection settings in hub info bar
+	- Added '/listen' command to display currently used ports
+	- Don't listen on TLS port when tls_policy is disabled
+	- Added 'disconnect_offline' setting
+	- Display '(global)' indicator when showing /hset variables
+	- Don't strip whitespace from /say
+	- Don't allow directory separator as /share name
+	- Allow 'global.' and '#hubname.' prefix for /set keys
+	- Fix display of long IP addresses on user list
+
+1.8 - 2012-02-13
+	- Added bandwidth limiting (upload_rate and download_rate settings)
+	- Added hash speed limiting (hash_rate setting)
+	- Added 'm' key to connection tab to /msg selected user
+	- Disable client-to-client TLS by default
+	- Don't throw away some search results on NMDC
+	- (Partially) fixed uploading of >2GB chunks
+	- Fixed file descriptor leak when using the backlog feature
+	- Fixed crash when opening invalid filelist from search twice
+	- Use POD for the manual pages
+	- Minor typo fixes
+
+1.7 - 2011-12-30
+	- Split /set command in a /set (global) and /hset (hub)
+	- File downloads are performed in a background thread
+	- Added glob-style matching on /set and /hset keys
+	- Added UTF-8 locale check
+	- Added 'sendfile' setting
+	- Added finer granularity for the flush_file_cache setting
+	- Allow flush_file_cache to be enabled for downloads
+	- Fix sending of $MyINFO with wrong public hub count
+	- Fix incorrect inclusion of gdbm.h
+
+1.6 - 2011-12-07
+	- Use SQLite3 for storage instead of GDBM
+	- Converted config.ini to SQLite3 database
+	- Added ncdc-db-upgrade utility
+	- Session directory is architecture-independent
+	- All data is safe against crashes and power failures
+	- Added support for removing/adding directories without rehashing
+	- Always match every file list on 'Q' key on TTH search
+	- Immediately flush log entries to the kernel
+	- Faster start-up
+	- Added support for per-hub 'active_ip' settings
+	- Allow interval notation when setting autorefresh
+	- Broadcast SF (number of shared files) on ADC hubs
+	- Combine TTH data for downloaded files to blocks of at least 1MiB
+	- Increased hash buffer size (10KiB -> 512KiB)
+	- Fix case-insensitivity of search results
+	- Fix reporting of user state in pm tabs at hub disconnect
+	- Fix generation of client certificates with openssl
+	- Fix segfault with duplicate users on an ADC hub
+	- Fix segfault when opening of a filelist fails
+	- Fix base32 decoding bug (fixes login sequence on some ADC hubs)
+
+1.5 - 2011-11-03
+	- Added filelist_maxage setting
+	- Added flush_file_cache setting
+	- Added /ungrant and improved /grant management
+	- Added key to download queue to clear user state for all files
+	- Added keys to search results to download file list and match queue
+	- Select the right user when using the 'q' key in connection tab
+	- Fixed possible crash when opening file list from search results
+	- Fixed detection of incompatible session directory version
+
+1.4 - 2011-10-26
+	- Added sorting functionality to file list
+	- Added color settings: title, separator, list_default, list_header and
+	  list_select
+	- Added "blink" color attribute
+	- Allow /disconnect to be used on the main tab
+	- Display number of matched and added items when using match queue feature
+	- Use git-describe to create a version string, if available
+	- Decreased memory usage for large file lists
+	- Handle duplicate filenames in other users' file list
+	- Fixed incorrect setting of the "Incomplete" flag in files.xml.bz2
+	- Fixed handling of the PM param in MSG commands on ADC
+	- Fixed user change notifications for PM tabs
+
+1.3 - 2011-10-14
+	- Added multi-source downloading
+	- Added user information view and management keys to download queue tab
+	- Added "search for alternative" key to queue, file browser and search tabs
+	- Added "match queue" key to file browser and search tabs
+	- Added ui_time_format setting
+	- Added chat_only setting
+	- Changed default value of color_log_time to dark grey
+	- Improved tracking of a parent for each tab
+	- Improved portability for Solaris
+	- Fixed crash when closing a hub tab while it is connecting
+	- Fixed crash when auto-completing settings without auto-completion
+	- Fixed bug with file name display if download_dir ends with a slash
+	- Fixed bug with uploading chunks larger than 2GiB
+	- Fixed handling of directory search results on ADC
+
+1.2 - 2011-09-25
+	- Fixed incorrect handling of outgoing NMDC connections
+
+1.1 - 2011-09-25
+	- Select item in file browser when opened from a search result
+	- Added active_bind setting
+	- Added share_exclude setting
+	- Added download_exclude setting
+	- Added incoming_dir setting
+	- Added autocompletion for the previous values of certain settings
+	- Allow the "connection" setting to be used for ADC as well
+	- Added IP column to user list
+	- Allow sorting on description, email, tag and IP columns in user list
+	- Display upload speeds in the user list of an ADC hub
+	- Added TLS indication to connection list
+	- Mark selected items bold in listings
+	- Allow /reconnect on the main tab to reconnect all hubs
+	- Added slash to base path in partial file lists
+	- Added delay of 5 seconds before reconnecting to a hub
+	- Added recognition of the AP param on ADC
+	- Added support for UserIP2 on NMDC
+	- Removed support for unexpected incoming NMDC connections
+
+1.0 - 2011-09-16
+	- Added ncdc(1) and ncdc-gen-cert(1) manual pages
+	- Documented settings (/help set <setting>)
+	- Documented key bindings (/help keys)
+	- Improved line wrapping algorithm for the log window
+	- Added support for client-to-client TLS on NMDC
+	- Added support for the CGFI command on ADC
+	- Throttle GET requests on the same file + offset
+	- Fixed glib assertion failure when disabling active mode
+	- Fixed downloading from clients using $ADCSND with -1 bytes
+	- Fixed race condition in file uploading code
+	- Fixed idle time calculation while connecting to another client
+	- Properly include unistd.h in dl.c
+
+0.9 - 2011-09-03
+	- Added TLS support (adcs://, nmdcs://, and ADC client-to-client)
+	- Added tls_policy setting
+	- Added KEYP support for ADC
+	- Added warning when a hub changes TLS certificate
+	- Display exact listen ports when enabling active mode
+
+0.8 - 2011-08-26
+	- Added transfer log
+	- Added log_downloads and log_uploads settings
+	- Added day changed indicators to the log windows
+	- Added common readline keys to the text input box
+	- Changed /refresh shortcut from Ctrl+e/u to Alt+r
+	- Allow join messages to work even when the join completion detection fails
+	- Select parent tab when closing a userlist, PM or filelist tab
+	- Re-open log files when receiving SIGUSR1
+	- Perform a clean shutdown when the terminal is closed
+	- Fixed bug in formatting the title of a /search tab
+	- Fixed log indent for non-ASCII nicks
+	- Fixed log highlighting and indenting for /me messages
+
+0.7 - 2011-08-17
+	- Added word wrapping for the log window
+	- Added basic colors and nick highlighting to the log window
+	- Allow colors to be changed with the /set command
+	- Added backlog feature and setting
+	- Added silent building to the configure script
+	- Automatically re-open log files when they are moved/truncated externally
+	- Accept 'nmdc://' URLs as alternative to 'dchub://'
+	- Fixed spamming of useless $MyINFO and BINF commands every 5 minutes
+	- Fixed minor memory leak when closing/clearing the log window
+
+0.6 - 2011-08-08
+	- Added file searching, through a /search command
+	- Added tab to display the search results
+	- Listen for incoming messages on UDP in active mode
+	- Allow specifying a hub address with /open
+	- Fixed case-sensitivity of shared files
+	- Various bugfixes and other improvements
+
+0.5 - 2011-08-02
+	- Downloaded files are now TTH-checked
+	- Added download queue priorities
+	- Download queue items are automatically disabled on error
+	- Improved error handling and reporting for downloads
+	- Added download_slots setting
+	- Use a separate thread to load other users' file list
+	- Improved /gc to also clean up download queue related data
+	- Decreased memory usage for large file lists
+	- Improved error handling with sendfile()
+	- Fixed downloading in passive mode on ADC hubs
+	- Fixed adding a dir to the download queue while connected to the user
+	- Fixed segfault when the userlist is open while disconnecting from a hub
+
+0.4 - 2011-07-23
+	- Added file downloading support
+	  WARNING: Downloaded files are not TTH checked at this moment.
+	- Added persistent download queue
+	- Added busy indicators on start-up and with /gc
+	- Added download speed indicator to status bar
+	- Improved connection list interface
+	- Improved performance of UI message handling
+	- Fixed a remote crash
+	- Fixed incorrect reporting of hub counters
+
+0.3 - 2011-07-15
+	- Added file list browser
+	- Added downloading of other people's file list
+	- Added 'hubname' setting to rename hub tabs
+	- Added -v, -c and -n commandline options
+	- Added -n option to /open to prevent an autoconnect
+	- Added referer notification
+	- Improved handling of some ADC commands
+	- Improved logging of debug messages
+	- Fixed error when uploading an empty file list
+	- Fixed display of join/quits on ADC hubs
+	- Fixed several crashes
+
+0.2 - 2011-06-27
+	- ADC support
+	- Added slot granting and /grant command
+	- Added /kick (for NMDC hubs)
+	- Added /pm and /nick aliasses
+	- Added support for passworded login
+	- Added /me command (mostly useful for ADC hubs)
+	- Added /whois command
+	- Added 'share_hidden' option (default: false)
+	- Improved minislots support
+	- Added 'minislots' and 'minislot_size' options
+	- Slightly improved user list and connection list
+	- /set displays default values for unset options
+
+0.1 - 2011-06-20
+	Initial version
