@@ -36,9 +36,9 @@ BUILDING FROM A RELEASE TARBALL
   - pod2man (optional, comes with a default Perl installation)
   - makeheaders (optional, included in the distribution if you don't have it)
 
-  And the usual commands will get you up and running:
+  And the usual commands (with GeoIP support or not) will get you up and running:
 
-    ./configure --prefix=/usr
+    ./configure --prefix=/usr --with-geoip
     make
     (sudo) make install
 
