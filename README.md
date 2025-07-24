@@ -1,27 +1,21 @@
-ncdc 1.25
+Ncdc 1.25
 =========
 
 DESCRIPTION
 
-  ncdc is a modern and lightweight direct connect client with a friendly
+  Ncdc is a modern and lightweight direct connect client with a friendly
   ncurses interface.
-
-  Always make sure you run the latest version. You can check for updates and
-  find more information at https://dev.yorhel.nl/ncdc
-
-
 
 REQUIREMENTS
 
-
-  ncursesw
-  zlib
-  bzip2
-  sqlite  >= 3.3.9
-  glib    >= 2.32.0
-  gnutls  >= 3.0
-  libmaxminddb (optional)
-  libloc       (optional)
+*  ncursesw
+*  zlib
+*  bzip2
+*  sqlite  >= 3.3.9
+*  glib    >= 2.32.0
+*  gnutls  >= 3.0
+*  libmaxminddb (optional)
+*  libloc       (optional)
 
 
 
@@ -70,11 +64,12 @@ CROSS COMPILING
   Replace 'cc' with a compiler that builds binaries that can be run on the
   build system.
 
-
+  Always make sure you run the latest version. You can check for updates and
+  find more information at https://dev.yorhel.nl/ncdc
 
 CONTACT
 
-  Email: projects@yorhel.nl
-    Web: https://dev.yorhel.nl/ncdc
-     DC: adc://dc.blicky.net:2780/ or adcs://dc.blicky.net:2780/
+ * Email: projects@yorhel.nl
+ * Web: https://dev.yorhel.nl/ncdc
+ * DC: adcs://dc.blicky.net:2780/
 
