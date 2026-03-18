@@ -138,9 +138,35 @@ gboolean ui_color_str_parse(const char *str, short *fg, short *bg, int *x, GErro
       continue;
     ui_attr_t *attr = ui_attr_by_name(*arg);
     if(!attr) {
-      g_set_error(err, 1, 0, "Unknown color or attribute: %s", *arg);
-      g_strfreev(args);
-      return FALSE;
+      /* Try numeric 256-color: plain number 0-255 or "color:N" */
+      const char *numstr = *arg;
+      if(g_str_has_prefix(numstr, "color:"))
+        numstr += 6;
+      char *endp;
+      long n = strtol(numstr, &endp, 10);
+      if(*endp == '\0' && n >= 0 && n <= 255) {
+        if(COLORS < 256) {
+          g_set_error(err, 1, 0, "Terminal does not support 256 colors (COLORS=%d)", COLORS);
+          g_strfreev(args);
+          return FALSE;
+        }
+        if(!state) {
+          f = (short)n;
+          state++;
+        } else if(state == 1) {
+          b = (short)n;
+          state++;
+        } else {
+          g_set_error(err, 1, 0, "Don\'t know what to do with a third color: %s", *arg);
+          g_strfreev(args);
+          return FALSE;
+        }
+      } else {
+        g_set_error(err, 1, 0, "Unknown color or attribute: %s", *arg);
+        g_strfreev(args);
+        return FALSE;
+      }
+      continue;
     }
     if(!attr->color)
       a |= attr->attr;
@@ -151,7 +177,7 @@ gboolean ui_color_str_parse(const char *str, short *fg, short *bg, int *x, GErro
       b = attr->attr;
       state++;
     } else {
-      g_set_error(err, 1, 0, "Don't know what to do with a third color: %s", *arg);
+      g_set_error(err, 1, 0, "Don\'t know what to do with a third color: %s", *arg);
       g_strfreev(args);
       return FALSE;
     }
@@ -165,11 +191,22 @@ gboolean ui_color_str_parse(const char *str, short *fg, short *bg, int *x, GErro
 
 
 char *ui_color_str_gen(int fd, int bg, int x) {
-  static char buf[100]; // must be smaller than (max_color_name * 2) + (max_attr_name * 3) + 6
-  strcpy(buf, ui_name_by_attr(fd));
+  static char buf[64];
+  const char *fname = (fd >= 0 && fd < 8) ? ui_name_by_attr(fd) : NULL;
+  if(fname)
+    strcpy(buf, fname);
+  else
+    g_snprintf(buf, sizeof(buf), "%d", fd);
   if(bg != COLOR_DEFAULT) {
     strcat(buf, ",");
-    strcat(buf, ui_name_by_attr(bg));
+    const char *bname = (bg >= 0 && bg < 8) ? ui_name_by_attr(bg) : NULL;
+    if(bname)
+      strcat(buf, bname);
+    else {
+      char tmp[8];
+      g_snprintf(tmp, sizeof(tmp), "%d", bg);
+      strcat(buf, tmp);
+    }
   }
   ui_attr_t *attr = ui_attr_names;
   for(; attr->name[0]; attr++)
