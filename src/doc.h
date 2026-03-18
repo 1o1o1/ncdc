@@ -357,6 +357,16 @@ static const doc_set_t doc_sets[] = {
   "The actual color values displayed by your terminal may vary. Adding the"
   " `bold' attribute usually makes the foreground color appear brighter as well."
 },
+{ "client_name", 1, "<string>",
+  "The client name to announce to hubs. This is the name shown in the user list"
+  " tag column. When not set, the default \"ncdc\" is used. Example:"
+  " `set client_name EiskaltDC++'"
+},
+{ "client_version", 1, "<string>",
+  "The client version to announce to hubs, shown alongside client_name in the"
+  " user list tag. When not set, the actual ncdc version is used. Example:"
+  " `set client_version 2.4.2'"
+},
 { "connection", 1, "<string>",
   "Set your upload speed. This is just an indication for other users in the hub"
   " so that they know what speed they can expect when downloading from you. The"

@@ -105,7 +105,7 @@ struct hub_t {
   char *kp;                // NULL if it matches config, 32 bytes slice-alloced otherwise
 
   // last info we sent to the hub
-  char *nfo_desc, *nfo_conn, *nfo_mail, *nfo_ip;
+  char *nfo_desc, *nfo_conn, *nfo_mail, *nfo_ip, *nfo_client_name, *nfo_client_version;
   unsigned char nfo_slots, nfo_free_slots, nfo_h_norm, nfo_h_reg, nfo_h_op;
   guint64 nfo_share;
   guint16 nfo_udp_port;
@@ -732,9 +732,15 @@ void hub_send_nfo(hub_t *hub) {
   sup_tls = var_get_int(hub->id, VAR_tls_policy) > VAR_TLSP_DISABLE ? TRUE : FALSE;
   sup_sudp = hub->tls && var_get_int(0, VAR_sudp_policy) != VAR_SUDPP_DISABLE ? TRUE : FALSE;
 
+  const char *cur_client_name    = var_get(hub->id, VAR_client_name);
+  const char *cur_client_version = var_get(hub->id, VAR_client_version);
+#define streqcn(a) ((!a && !hub->nfo_client_name)    || (a && hub->nfo_client_name    && strcmp(a, hub->nfo_client_name)    == 0))
+#define streqcv(a) ((!a && !hub->nfo_client_version) || (a && hub->nfo_client_version && strcmp(a, hub->nfo_client_version) == 0))
+
   // check whether we need to make any further effort
   if(hub->nick_valid && streq(desc) && streq(conn) && streq(mail) && eq(slots) && eq(free_slots) && streq(ip)
-      && eq(h_norm) && eq(h_reg) && eq(h_op) && eq(share) && eq(udp_port) && beq(sup_tls) && beq(sup_sudp)) {
+      && eq(h_norm) && eq(h_reg) && eq(h_op) && eq(share) && eq(udp_port) && beq(sup_tls) && beq(sup_sudp)
+      && streqcn(cur_client_name) && streqcv(cur_client_version)) {
     g_string_free(fmt_desc, TRUE);
     return;
   }
@@ -746,7 +752,12 @@ void hub_send_nfo(hub_t *hub) {
     // send non-changing stuff in the IDENTIFY state
     gboolean f = hub->state == ADC_S_IDENTIFY;
     if(f) {
-      g_string_append_printf(cmd, " ID%s PD%s APncdc VE%s", var_get(0, VAR_cid), var_get(0, VAR_pid), main_version);
+      {
+        g_string_append_printf(cmd, " ID%s PD%s AP%s VE%s",
+          var_get(0, VAR_cid), var_get(0, VAR_pid),
+          cur_client_name    ? cur_client_name    : "ncdc",
+          cur_client_version ? cur_client_version : main_version);
+      }
       adc_append(cmd, "NI", hub->nick);
       // Always add our KP field, even if we're not active. Other clients may
       // validate our certificate even when we are the one connecting.
@@ -799,9 +810,14 @@ void hub_send_nfo(hub_t *hub) {
     char *ndesc = nmdc_encode_and_escape(hub, desc?desc:"");
     char *nconn = nmdc_encode_and_escape(hub, conn?conn:"0.005");
     char *nmail = nmdc_encode_and_escape(hub, mail?mail:"");
-    nfo = g_strdup_printf("$MyINFO $ALL %s %s<ncdc V:%s,M:%c,H:%d/%d/%d,S:%d>$ $%s%c$%s$%"G_GUINT64_FORMAT"$|",
-      hub->nick_hub, ndesc, main_version, ip ? 'A' : 'P', h_norm, h_reg, h_op,
-      slots, nconn, 1 | (sup_tls ? 0x10 : 0), nmail, share);
+    {
+      nfo = g_strdup_printf("$MyINFO $ALL %s %s<%s V:%s,M:%c,H:%d/%d/%d,S:%d>$ $%s%c$%s$%"G_GUINT64_FORMAT"$|",
+        hub->nick_hub, ndesc,
+        cur_client_name    ? cur_client_name    : "ncdc",
+        cur_client_version ? cur_client_version : main_version,
+        ip ? 'A' : 'P', h_norm, h_reg, h_op,
+        slots, nconn, 1 | (sup_tls ? 0x10 : 0), nmail, share);
+    }
     g_free(ndesc);
     g_free(nconn);
     g_free(nmail);
@@ -816,6 +832,8 @@ void hub_send_nfo(hub_t *hub) {
   g_free(hub->nfo_conn); hub->nfo_conn = g_strdup(conn);
   g_free(hub->nfo_mail); hub->nfo_mail = g_strdup(mail);
   g_free(hub->nfo_ip);   hub->nfo_ip   = g_strdup(ip);
+  g_free(hub->nfo_client_name);    hub->nfo_client_name    = g_strdup(cur_client_name);
+  g_free(hub->nfo_client_version); hub->nfo_client_version = g_strdup(cur_client_version);
   hub->nfo_slots = slots;
   hub->nfo_free_slots = free_slots;
   hub->nfo_h_norm = h_norm;
@@ -829,6 +847,8 @@ void hub_send_nfo(hub_t *hub) {
 
 #undef eq
 #undef streq
+#undef streqcn
+#undef streqcv
 
 
 void hub_say(hub_t *hub, const char *str, gboolean me) {
@@ -2034,6 +2054,8 @@ void hub_free(hub_t *hub) {
   g_free(hub->nfo_conn);
   g_free(hub->nfo_mail);
   g_free(hub->nfo_ip);
+  g_free(hub->nfo_client_name);
+  g_free(hub->nfo_client_version);
   g_free(hub->gpa_salt);
   g_hash_table_unref(hub->users);
   g_hash_table_unref(hub->sessions);

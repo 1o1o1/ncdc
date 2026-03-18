@@ -967,6 +967,8 @@ struct var_t {
   V(chat_only,        1,1, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
   V(cid,              0,0, NULL,           NULL,            NULL,          NULL,         NULL,            i_cid_pid())\
   UI_COLORS \
+  V(client_name,      1,1, f_id,           p_id,            su_old,        NULL,         s_hubinfo,       NULL)\
+  V(client_version,   1,1, f_id,           p_id,            su_old,        NULL,         s_hubinfo,       NULL)\
   V(connection,       1,1, f_id,           p_connection,    su_old,        NULL,         s_hubinfo,       NULL)\
   V(description,      1,1, f_id,           p_id,            su_old,        NULL,         s_hubinfo,       NULL)\
   V(disconnect_offline,1,1,f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
