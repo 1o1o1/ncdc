@@ -1419,7 +1419,7 @@ void cc_nmdc_connect(cc_t *cc, const char *host, unsigned short port, const char
   g_return_if_fail(cc->state == CCS_CONN);
   g_snprintf(cc->remoteaddr, sizeof(cc->remoteaddr), ip6_isvalid(host) ? "[%s]:%d" : "%s:%d", host, (int)port);
   cc->tls = tls;
-  net_connect(cc->net, host, port, laddr, handle_connect);
+  net_connect(cc->net, host, port, laddr, 0, handle_connect);
   g_clear_error(&cc->err);
 }
 
@@ -1451,7 +1451,7 @@ void cc_adc_connect(cc_t *cc, hub_user_t *u, const char *laddr, unsigned short p
     return;
 
   // connect
-  net_connect(cc->net, host, port, laddr, handle_connect);
+  net_connect(cc->net, host, port, laddr, 0, handle_connect);
   g_clear_error(&cc->err);
 }
 

@@ -1002,9 +1002,6 @@ struct var_t {
   V(notify_bell,      1,0, f_notify_bell,  p_notify_bell,   su_notify_bell,g_notify_bell,s_notify_bell,   G_STRINGIFY(VAR_NOTB_DISABLE))\
   V(password,         0,1, f_password,     p_id,            NULL,          NULL,         s_password,      NULL)\
   V(pid,              0,0, NULL,           NULL,            NULL,          NULL,         NULL,            i_cid_pid())\
-  V(proxy_auth,       1,1, f_id,           p_id,            su_old,        NULL,         NULL,            NULL)\
-  V(proxy_host,       1,1, f_id,           p_id,            su_old,        NULL,         NULL,            NULL)\
-  V(proxy_port,       1,1, f_int,          p_int,           NULL,          NULL,         NULL,            "1080")\
   V(reconnect_timeout,1,1, f_interval,     p_interval,      su_old,        NULL,         NULL,            "30")\
   V(sendfile,         1,0, f_sendfile,     p_sendfile,      su_bool,       NULL,         NULL,            "true")\
   V(share_emptydirs,  1,0, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\

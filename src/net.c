@@ -55,12 +55,13 @@ typedef struct net_t net_t;
 
 
 // Network states
-#define NETST_IDL 0 // idle, disconnected
-#define NETST_DNS 1 // resolving DNS
-#define NETST_CON 2 // connecting
-#define NETST_ASY 3 // connected, handling async messages
-#define NETST_SYN 4 // connected, handling a synchronous send/receive
-#define NETST_DIS 5 // disconnecting (cleanly)
+#define NETST_IDL   0 // idle, disconnected
+#define NETST_DNS   1 // resolving DNS
+#define NETST_CON   2 // connecting (TCP)
+#define NETST_SOCKS 6 // connected to SOCKS5 proxy, negotiating tunnel
+#define NETST_ASY   3 // connected, handling async messages
+#define NETST_SYN   4 // connected, handling a synchronous send/receive
+#define NETST_DIS   5 // disconnecting (cleanly)
 
 typedef struct dnscon_t dnscon_t;
 typedef struct synfer_t synfer_t;
@@ -76,6 +77,12 @@ struct net_t {
   int socksrc; // state CON,ASY,DIS. Glib event source on 'sock'.
   char addr[56]; // state ASY,SYN,DIS, ip:port
   char laddr[40]; // state ASY,SYN,DIS, ip only
+
+  // SOCKS5 state (NETST_SOCKS)
+  char *socks_host;         // target host to tunnel to
+  unsigned short socks_port;// target port to tunnel to
+  guint64 socks_hub_id;     // hub id for per-hub proxy_auth lookup
+  void (*socks_cb)(net_t *, const char *); // callback after tunnel established
 
   gnutls_session_t tls; // state ASY,SYN,DIS (only if tls is enabled)
   void (*cb_handshake)(net_t *, const char *, int); // state ASY, called after complete handshake.
@@ -1082,6 +1089,11 @@ struct dnscon_t {
   struct addrinfo *next;
   char *err;
   void(*cb)(net_t *, const char *);
+  // Original destination when going through a proxy
+  char *dest_host;
+  unsigned short dest_port;
+  // Hub ID for per-hub proxy lookup (0 = global only)
+  guint64 hub_id;
 };
 
 
@@ -1092,6 +1104,7 @@ static void dnscon_free(dnscon_t *r) {
   g_free(r->err);
   g_free(r->addr);
   g_free(r->laddr);
+  g_free(r->dest_host);
   if(r->nfo)
     freeaddrinfo(r->nfo);
   g_slice_free(dnscon_t, r);
@@ -1100,9 +1113,171 @@ static void dnscon_free(dnscon_t *r) {
 
 static void dnscon_tryconn(net_t *n);
 
+/* ---- SOCKS5 implementation -------------------------------------------- */
+
+/* ---- SOCKS5 implementation (synchronous handshake) -------------------- */
+
+// Blocking recv that keeps reading until exactly 'len' bytes received.
+static gboolean socks5_recvall(int sock, unsigned char *buf, int len) {
+  int got = 0;
+  while(got < len) {
+    int r = recv(sock, buf + got, len - got, 0);
+    if(r <= 0) return FALSE;
+    got += r;
+  }
+  return TRUE;
+}
+
+// Called by GLib when proxy socket becomes readable — data is ready.
+// We switch to blocking for the handshake (tiny amounts), then restore.
+static gboolean socks5_do_handshake(gpointer dat) {
+  net_t *n = dat;
+  n->socksrc = 0;
+
+  unsigned char buf[260];
+  int flags = fcntl(n->sock, F_GETFL, 0);
+
+  // Switch to blocking for the handshake
+  fcntl(n->sock, F_SETFL, flags & ~O_NONBLOCK);
+
+  // ---- Step 0: read greeting reply ----
+  if(!socks5_recvall(n->sock, buf, 2)) {
+    fcntl(n->sock, F_SETFL, flags);
+    char *e = g_strdup_printf("SOCKS5: greeting read error: %s", g_strerror(errno));
+    n->cb_err(n, NETERR_CONN, e); g_free(e); return FALSE;
+  }
+  if(buf[0] != 0x05) {
+    fcntl(n->sock, F_SETFL, flags);
+    n->cb_err(n, NETERR_CONN, "SOCKS5: not a SOCKS5 server"); return FALSE;
+  }
+  if(buf[1] == 0xFF) {
+    fcntl(n->sock, F_SETFL, flags);
+    n->cb_err(n, NETERR_CONN, "SOCKS5: no acceptable auth method"); return FALSE;
+  }
+
+  // ---- Step 1: auth if required ----
+  if(buf[1] == 0x02) {
+    char *auth = var_get(n->socks_hub_id, VAR_proxy_auth);
+    char user[256] = "", pass[256] = "";
+    if(auth) {
+      char *colon = strchr(auth, ':');
+      if(colon) {
+        size_t ulen = MIN((size_t)(colon - auth), sizeof(user)-1);
+        strncpy(user, auth, ulen); user[ulen] = '\0';
+        strncpy(pass, colon+1, sizeof(pass)-1);
+      }
+    }
+    size_t ulen = strlen(user), plen = strlen(pass);
+    unsigned char apkt[3 + 255 + 255];
+    int alen = 0;
+    apkt[alen++] = 0x01;
+    apkt[alen++] = (unsigned char)ulen;
+    memcpy(apkt+alen, user, ulen); alen += ulen;
+    apkt[alen++] = (unsigned char)plen;
+    memcpy(apkt+alen, pass, plen); alen += plen;
+    send(n->sock, apkt, alen, 0);
+
+    if(!socks5_recvall(n->sock, buf, 2) || buf[1] != 0x00) {
+      fcntl(n->sock, F_SETFL, flags);
+      n->cb_err(n, NETERR_CONN, "SOCKS5: authentication failed"); return FALSE;
+    }
+  }
+
+  // ---- Step 2: CONNECT to target ----
+  const char *host = n->socks_host;
+  unsigned short port = n->socks_port;
+  size_t hlen = strlen(host);
+  unsigned char *pkt = g_malloc(5 + hlen + 2);
+  pkt[0] = 0x05; pkt[1] = 0x01; pkt[2] = 0x00; pkt[3] = 0x03;
+  pkt[4] = (unsigned char)hlen;
+  memcpy(pkt+5, host, hlen);
+  pkt[5+hlen]   = (port >> 8) & 0xFF;
+  pkt[5+hlen+1] =  port       & 0xFF;
+  send(n->sock, pkt, 5+hlen+2, 0);
+  g_free(pkt);
+
+  // Read CONNECT reply header (4 bytes: VER REP RSV ATYP)
+  if(!socks5_recvall(n->sock, buf, 4)) {
+    fcntl(n->sock, F_SETFL, flags);
+    char *e = g_strdup_printf("SOCKS5: CONNECT reply read error: %s", g_strerror(errno));
+    n->cb_err(n, NETERR_CONN, e); g_free(e); return FALSE;
+  }
+  if(buf[1] != 0x00) {
+    fcntl(n->sock, F_SETFL, flags);
+    const char *msgs[] = {
+      "SOCKS5: general failure", "SOCKS5: connection not allowed",
+      "SOCKS5: network unreachable", "SOCKS5: host unreachable",
+      "SOCKS5: connection refused", "SOCKS5: TTL expired",
+      "SOCKS5: command not supported", "SOCKS5: address type not supported"
+    };
+    int code = buf[1];
+    n->cb_err(n, NETERR_CONN, (code >= 1 && code <= 8) ? msgs[code-1] : "SOCKS5: unknown error");
+    return FALSE;
+  }
+  // Drain BND.ADDR + BND.PORT
+  if     (buf[3] == 0x01) socks5_recvall(n->sock, buf, 4+2);      // IPv4 + port
+  else if(buf[3] == 0x04) socks5_recvall(n->sock, buf, 16+2);     // IPv6 + port
+  else if(buf[3] == 0x03) {
+    socks5_recvall(n->sock, buf, 1);
+    socks5_recvall(n->sock, buf+1, buf[0]+2);                      // domain + port
+  }
+
+  // Restore non-blocking
+  fcntl(n->sock, F_SETFL, flags);
+
+  // Tunnel established — hand off to normal connection handling
+  void (*cb)(net_t *, const char *) = n->socks_cb;
+  g_free(n->socks_host); n->socks_host = NULL;
+  n->socks_cb = NULL;
+  n->socksrc  = 0;             // we're returning FALSE so GLib removes this source
+  n->state    = NETST_CON;     // net_connected() requires NETST_IDL or NETST_CON
+
+  net_connected(n, n->sock, n->addr, FALSE);
+  if(cb) cb(n, NULL);
+  return FALSE;
+}
+
+static void socks5_start(net_t *n, const char *dest_host, unsigned short dest_port,
+                          guint64 hub_id, void (*cb)(net_t *, const char *)) {
+  n->socks_host   = g_strdup(dest_host);
+  n->socks_port   = dest_port;
+  n->socks_cb     = cb;
+  n->socks_hub_id = hub_id;
+  n->state        = NETST_SOCKS;
+
+  // Send SOCKS5 greeting
+  char *auth = var_get(hub_id, VAR_proxy_auth);
+  unsigned char greeting[4];
+  greeting[0] = 0x05;
+  if(auth && strchr(auth, ':')) {
+    greeting[1] = 0x02; greeting[2] = 0x00; greeting[3] = 0x02;
+    send(n->sock, greeting, 4, 0);
+  } else {
+    greeting[1] = 0x01; greeting[2] = 0x00;
+    send(n->sock, greeting, 3, 0);
+  }
+
+  // Wait for proxy response via GLib event
+  GSource *src = fdsrc_new(n->sock, G_IO_IN);
+  g_source_set_callback(src, socks5_do_handshake, n, NULL);
+  n->socksrc = g_source_attach(src, NULL);
+  g_source_unref(src);
+}
+
+/* ----------------------------------------------------------------------- */
+
 static void dnsconn_handleconn(net_t *n, int err) {
   // Successful.
   if(err == 0) {
+    char *proxy_host = var_get(n->dnscon->hub_id, VAR_proxy_host);
+    if(proxy_host) {
+      // Connected to proxy — start SOCKS5 tunnel to real destination
+      socks5_start(n, n->dnscon->dest_host, n->dnscon->dest_port, n->dnscon->hub_id, n->dnscon->cb);
+      dnscon_free(n->dnscon);
+      n->dnscon = NULL;
+      return;
+    }
+
     net_connected(n, n->sock, n->addr, n->dnscon->next->ai_family == AF_INET6);
 
     if(n->dnscon->cb)
@@ -1262,7 +1437,7 @@ void       *net_handle(net_t *n)     { return n->handle; }
 
 gboolean net_is_asy(net_t *n)           { return n->state == NETST_ASY; }
 gboolean net_is_connected(net_t *n)     { return n->state == NETST_ASY || n->state == NETST_SYN; }
-gboolean net_is_connecting(net_t *n)    { return n->state == NETST_DNS || n->state == NETST_CON; }
+gboolean net_is_connecting(net_t *n)    { return n->state == NETST_DNS || n->state == NETST_CON || n->state == NETST_SOCKS; }
 gboolean net_is_disconnecting(net_t *n) { return n->state == NETST_DIS; }
 gboolean net_is_idle(net_t *n)          { return n->state == NETST_IDL; }
 gboolean net_is_ipv6(net_t *n)          { return n->v6; }
@@ -1280,8 +1455,8 @@ static gboolean handle_timer(gpointer dat) {
 
   // 30 second timeout on connecting, disconnecting, synchronous transfers, and
   // non-keepalive ASY connections.
-  if(intv > 30 && (n->state == NETST_DNS || n->state == NETST_CON || n->state == NETST_DIS || n->state == NETST_SYN || (n->state == NETST_ASY && !n->timeout_msg))) {
-    if(n->state == NETST_DNS || n->state == NETST_CON)
+  if(intv > 30 && (n->state == NETST_DNS || n->state == NETST_CON || n->state == NETST_SOCKS || n->state == NETST_DIS || n->state == NETST_SYN || (n->state == NETST_ASY && !n->timeout_msg))) {
+    if(n->state == NETST_DNS || n->state == NETST_CON || n->state == NETST_SOCKS)
       n->cb_err(n, NETERR_TIMEOUT, g_strerror(ETIMEDOUT));
     else {
       g_debug("%s: Timeout.", net_remoteaddr(n));
@@ -1315,15 +1490,27 @@ net_t *net_new(void *handle, void(*err)(net_t *, int, const char *)) {
 // an address each time a connection attempt is made. It is called with NULL
 // when the connection was successful (at which point net_remoteaddr() should
 // work).
-void net_connect(net_t *n, const char *host, unsigned short port, const char *laddr, void(*cb)(net_t *, const char *)) {
+void net_connect(net_t *n, const char *host, unsigned short port, const char *laddr, guint64 hub_id, void(*cb)(net_t *, const char *)) {
   g_return_if_fail(n->state == NETST_IDL);
 
   dnscon_t *r = g_slice_new0(dnscon_t);
-  r->addr = g_strdup(host);
-  r->laddr = g_strdup(laddr);
-  r->port = port;
-  r->net = n;
-  r->cb = cb;
+  r->laddr  = g_strdup(laddr);
+  r->net    = n;
+  r->cb     = cb;
+  r->hub_id = hub_id;
+
+  char *proxy_host = var_get(hub_id, VAR_proxy_host);
+  if(proxy_host) {
+    int proxy_port = var_get_int(hub_id, VAR_proxy_port);
+    if(!proxy_port) proxy_port = 1080;
+    r->addr      = g_strdup(proxy_host);
+    r->port      = (unsigned short)proxy_port;
+    r->dest_host = g_strdup(host);
+    r->dest_port = port;
+  } else {
+    r->addr = g_strdup(host);
+    r->port = port;
+  }
 
   if(!n->timeout_src)
     n->timeout_src = g_timeout_add_seconds(5, handle_timer, n);
@@ -1348,6 +1535,12 @@ void net_disconnect(net_t *n) {
   case NETST_CON:
     dnscon_free(n->dnscon);
     n->dnscon = NULL;
+    break;
+
+  case NETST_SOCKS:
+    if(n->socksrc) { g_source_remove(n->socksrc); n->socksrc = 0; }
+    g_free(n->socks_host); n->socks_host = NULL;
+    n->socks_cb = NULL;
     break;
 
   case NETST_ASY:

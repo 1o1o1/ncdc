@@ -1995,7 +1995,7 @@ void hub_connect(hub_t *hub) {
   }
 
   ui_mf(hub->tab, 0, "Connecting to %s...", oaddr);
-  net_connect(hub->net, addr.host, addr.port, var_get(hub->id, VAR_local_address), hub->id, handle_connect);
+  net_connect(hub->net, addr.host, addr.port, var_get(hub->id, VAR_local_address), handle_connect);
   free(addr.buf);
 }
 

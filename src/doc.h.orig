@@ -550,20 +550,6 @@ static const doc_set_t doc_sets[] = {
   " `/password' command instead. Passwords are saved unencrypted in the config"
   " file."
 },
-{ "proxy_host", 1, "<string>",
-  "Hostname or IP address of the SOCKS5 proxy server. When set, all hub"
-  " connections (including TLS/nmdcs://) will be tunnelled through this proxy."
-  " Example: `set proxy_host 127.0.0.1'"
-},
-{ "proxy_port", 1, "<integer>",
-  "Port of the SOCKS5 proxy server. Default is 1080."
-  " Example: `set proxy_port 1080'"
-},
-{ "proxy_auth", 1, "<string>",
-  "Optional username and password for the SOCKS5 proxy, in the format"
-  " `user:password'. Leave unset if the proxy requires no authentication."
-  " Example: `set proxy_auth myuser:mypassword'"
-},
 { "reconnect_timeout", 1, "<interval>",
   "The time to wait before automatically reconnecting to a hub. Set to 0 to"
   " disable automatic reconnect."
