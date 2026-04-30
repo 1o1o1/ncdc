@@ -1293,14 +1293,17 @@ static void adc_handle(net_t *net, char *msg, int _len) {
         g_message("Message from someone not on this hub. (%s: %s)", net_remoteaddr(hub->net), msg);
       else {
         char *m = g_strdup_printf(me ? "** %s %s" : "<%s> %s", cmd.type == 'I' ? "hub" : u->name, cmd.argv[0]);
+        const char *sender = (cmd.type == 'I' || !u) ? NULL : u->name;
         if(cmd.type == 'E' || cmd.type == 'D' || cmd.type == 'F') { // PM
           hub_user_t *pmu = pm && strlen(pm) == 4 && ADC_DFCC(pm) ? g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(ADC_DFCC(pm))) : NULL;
           if(!pmu)
             g_message("Invalid PM param in MSG from %s: %s", net_remoteaddr(hub->net), msg);
-          else
+          else if(!sender || !ignore_check(sender, IGNORE_PM))
             uit_msg_msg(cmd.source == hub->sid ? d : pmu, m);
-        } else // hub chat
-          ui_m(hub->tab, UIM_CHAT|UIP_MED, m);
+        } else { // hub chat
+          if(!sender || !ignore_check(sender, IGNORE_CHAT))
+            ui_m(hub->tab, UIM_CHAT|UIP_MED, m);
+        }
         g_free(m);
       }
     }
@@ -1674,7 +1677,7 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
       char *user = charset_convert(hub, TRUE, from);
       ui_m(hub->tab, UIM_PASS|UIM_CHAT|UIP_MED, g_strdup_printf("<hub> PM from unknown user: <%s> %s", user, msge));
       free(user);
-    } else
+    } else if(!ignore_check(u->name, IGNORE_PM))
       uit_msg_msg(u, msge);
     g_free(msge);
     g_free(from);
@@ -1815,12 +1818,26 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
   // global hub message
   if(cmd[0] != '$') {
     char *msg = nmdc_unescape_and_decode(hub, cmd);
-    if(msg[0] == '<' || (msg[0] == '*' && msg[1] == '*'))
-      ui_m(hub->tab, UIM_PASS|UIM_CHAT|UIP_MED, msg);
-    else {
-      ui_m(hub->tab, UIM_PASS|UIM_CHAT|UIP_MED, g_strconcat("<hub> ", msg, NULL));
-      g_free(msg);
+    // Extract nick from <nick> or ** nick format for ignore check
+    char *sender = NULL;
+    if(msg[0] == '<') {
+      char *end = strchr(msg+1, '>');
+      if(end) sender = g_strndup(msg+1, end - msg - 1);
+    } else if(msg[0] == '*' && msg[1] == '*' && msg[2] == ' ') {
+      char *end = strchr(msg+3, ' ');
+      if(end) sender = g_strndup(msg+3, end - msg - 3);
     }
+    gboolean ignored = sender && ignore_check(sender, IGNORE_CHAT);
+    g_free(sender);
+    if(!ignored) {
+      if(msg[0] == '<' || (msg[0] == '*' && msg[1] == '*'))
+        ui_m(hub->tab, UIM_PASS|UIM_CHAT|UIP_MED, msg);
+      else {
+        ui_m(hub->tab, UIM_PASS|UIM_CHAT|UIP_MED, g_strconcat("<hub> ", msg, NULL));
+        g_free(msg);
+      }
+    } else
+      g_free(msg);
   }
 }
 

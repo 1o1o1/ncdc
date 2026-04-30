@@ -714,6 +714,46 @@ static void c_gc(char *args) {
 }
 
 
+static void c_ignore(char *args) {
+  // Usage: /ignore <pattern> [chat|pm|all]
+  if(!args[0]) {
+    ui_m(NULL, 0, "Usage: /ignore <nick|pattern> [chat|pm|all]");
+    return;
+  }
+  char **argv = g_strsplit(args, " ", 2);
+  const char *pattern = argv[0];
+  int mode = ignore_parse_mode(argv[1] ? g_strstrip(argv[1]) : NULL);
+  if(mode < 0) {
+    ui_m(NULL, 0, "Invalid mode. Use: chat, pm, or all.");
+    g_strfreev(argv);
+    return;
+  }
+  if(ignore_add(pattern, mode)) {
+    const char *ms = mode == IGNORE_ALL ? "all" : mode == IGNORE_PM ? "pm" : "chat";
+    ui_mf(NULL, 0, "Ignoring `%s' (%s).", pattern, ms);
+  } else
+    ui_mf(NULL, 0, "`%s' is already ignored with the same mode.", pattern);
+  g_strfreev(argv);
+}
+
+
+static void c_unignore(char *args) {
+  if(!args[0]) {
+    ui_m(NULL, 0, "Usage: /unignore <nick|pattern>");
+    return;
+  }
+  if(ignore_remove(args))
+    ui_mf(NULL, 0, "Removed `%s' from ignore list.", args);
+  else
+    ui_mf(NULL, 0, "`%s' not found in ignore list.", args);
+}
+
+
+static void c_ignorelist(char *args) {
+  ignore_list_print();
+}
+
+
 static void c_whois(char *args) {
   ui_tab_t *tab = ui_tab_cur->data;
   char *u = NULL;
@@ -1265,6 +1305,8 @@ static cmd_t cmds[] = {
   { "help",        c_help,        c_help_sug       },
   { "hset",        c_hset,        c_hset_sug       },
   { "hunset",      c_hunset,      c_hunset_sug     },
+  { "ignore",      c_ignore,      NULL             },
+  { "ignorelist",  c_ignorelist,  NULL             },
   { "kick",        c_kick,        c_msg_sug        },
   { "listen",      c_listen,      NULL             },
   { "me",          c_me,          c_say_sug        },
@@ -1282,6 +1324,7 @@ static cmd_t cmds[] = {
   { "set",         c_set,         c_set_sug        },
   { "share",       c_share,       c_share_sug      },
   { "ungrant",     c_ungrant,     c_ungrant_sug    },
+  { "unignore",    c_unignore,    NULL             },
   { "unset",       c_unset,       c_unset_sug      },
   { "unshare",     c_unshare,     c_unshare_sug    },
   { "userlist",    c_userlist,    NULL             },

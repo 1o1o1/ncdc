@@ -55,6 +55,7 @@ ncdc_SOURCES=\
 	src/fl_util.c\
 	src/geoip.c\
 	src/hub.c\
+	src/ignore.c\
 	src/listen.c\
 	src/main.c\
 	src/net.c\
