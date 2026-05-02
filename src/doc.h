@@ -332,6 +332,7 @@ static const doc_set_t doc_sets[] = {
   " interface colors. The following is a list of available color settings:\n\n"
   "  list_default  - default item in a list\n"
   "  list_header   - header of a list\n"
+  "  list_nick_op  - nick color for operators in user list\n"
   "  list_select   - selected item in a list\n"
   "  log_default   - default log color\n"
   "  log_time      - the time prefix in log messages\n"

@@ -37,6 +37,7 @@
 #define UI_COLORS \
   C(list_default,   "default")\
   C(list_header,    "default,bold")\
+  C(list_nick_op,   "default")\
   C(list_select,    "default,bold")\
   C(log_default,    "default")\
   C(log_highlight,  "yellow,bold")\

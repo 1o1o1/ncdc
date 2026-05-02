@@ -154,7 +154,10 @@ static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat
   char *tag = hub_user_tag(user);
   char *conn = hub_user_conn(user);
 
-  attron(iter == list->sel ? UIC(list_select) : UIC(list_default));
+  int base_attr = iter == list->sel ? UIC(list_select) : UIC(list_default);
+  int row_attr  = (user->isop && iter != list->sel) ? UIC(list_nick_op) : base_attr;
+
+  attron(row_attr);
   mvhline(row, 0, ' ', wincols);
   if(iter == list->sel)
     mvaddch(row, 0, '>');
@@ -186,7 +189,7 @@ static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat
   g_free(conn);
   g_free(tag);
 
-  attroff(iter == list->sel ? UIC(list_select) : UIC(list_default));
+  attroff(row_attr);
 }
 
 
