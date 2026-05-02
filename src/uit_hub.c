@@ -128,10 +128,13 @@ static void t_draw(ui_tab_t *tab) {
     char *conn = !listen_hub_active(tab->hub->id) ? g_strdup("[passive]")
       : g_strdup_printf("[active: %s]", hub_ip(tab->hub));
     char *proto = tab->hub->adc ? "[adc]" : "[nmdc]";
-    char *tmp = g_strdup_printf("%s @ %s%s %s %s", tab->hub->nick, addr,
+    char *proxy_host = var_get(tab->hub->id, VAR_proxy_host);
+    char *proxy = proxy_host ? g_strdup_printf("[proxy: %s]", proxy_host) : g_strdup("");
+    char *tmp = g_strdup_printf("%s @ %s%s %s %s%s%s", tab->hub->nick, addr,
       tab->hub->isop ? " (operator)" : tab->hub->isreg ? " (registered)" : "",
-      conn, proto);
+      conn, proto, proxy_host ? " " : "", proxy);
     g_free(conn);
+    g_free(proxy);
     mvaddstr(winrows-4, 0, tmp);
     g_free(tmp);
     int count = g_hash_table_size(tab->hub->users);
