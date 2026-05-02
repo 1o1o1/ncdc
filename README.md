@@ -1,5 +1,7 @@
-Ncdc 1.25
+Ncdc
 =========
+
+Fork of [ncdc](https://dev.yorhel.nl/ncdc) by Yorhel with additional patches.
 
 DESCRIPTION
 
@@ -67,9 +69,14 @@ CROSS COMPILING
   Always make sure you run the latest version. You can check for updates and
   find more information at https://dev.yorhel.nl/ncdc
 
-CONTACT
+## Added features
+
+- 256-color support for color settings
+- SOCKS5 proxy support with per-hub config and TLS (`proxy_host`, `proxy_port`, `proxy_auth`)
+- Custom client name/version spoofing (`client_name`, `client_version`)
+- Ignore list with wildcard patterns (`/ignore`, `/unignore`, `/ignorelist`)
+
+## Original project
 
  * Email: projects@yorhel.nl
  * Web: https://dev.yorhel.nl/ncdc
- * DC: adcs://dc.blicky.net:2780/
-
