@@ -89,7 +89,7 @@ MOSTLYCLEANFILES=$(auto_headers) src/version.h mkhdr.done
 # avoids the need to recompile everything on each commit.
 if USE_GIT_VERSION
 src/version.h: $(srcdir)/.git/logs/HEAD
-	$(AM_V_GEN)echo '"'"`git describe --abbrev=4 --dirty=-d | sed s/^v//`"'"' >src/version.h
+	$(AM_V_GEN)echo '"'"`git describe --tags --abbrev=4 | sed s/^v//`"'"' >src/version.h
 else
 src/version.h: Makefile
 	$(AM_V_GEN)echo '"'"@VERSION@"'"' >src/version.h
