@@ -67,7 +67,7 @@ CROSS COMPILING
   build system.
 
   Always make sure you run the latest version. You can check for updates and
-  find more information at https://dev.yorhel.nl/ncdc
+  find more information at https://github.com/1o1o1/ncdc
 
 ## Added features
 

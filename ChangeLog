@@ -1,3 +1,15 @@
+1.25.0.8 - 2026-04-02
+	Add SOCKS5 proxy indicator in hub separator bar
+	Add ignore list with nick/pattern filtering (/ignore, /unignore, /ignorelist)
+
+1.25.0.7 - 2026-03-30
+	Add SOCKS5 proxy support with per-hub config and TLS
+	New settings: proxy_host, proxy_port, proxy_auth.
+
+1.25.0.6 - 2026-03-18
+	Add 256 colors support
+	Add support for custom client name and version
+
 1.25 - 2025-03-04
 	- Add support for IP to country lookups through libloc
 	- Add `location_db` config option
