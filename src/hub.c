@@ -1691,7 +1691,7 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
     char *addr = g_match_info_fetch(nfo, 1);
     char *eaddr = nmdc_unescape_and_decode(hub, addr);
     ui_mf(hub->tab, UIP_HIGH, "\nThe hub is requesting you to move to %s.\nType `/connect %s' to do so.\n", eaddr, eaddr);
-    hub_disconnect(hub, FALSE);
+    hub_disconnect(hub, TRUE);
     g_free(eaddr);
     g_free(addr);
   }
