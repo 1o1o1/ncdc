@@ -195,6 +195,12 @@ static gboolean s_hubinfo(guint64 hub, const char *key, const char *val, GError 
   return TRUE;
 }
 
+static gboolean s_highlight(guint64 hub, const char *key, const char *val, GError **err) {
+  db_vars_set(hub, key, val);
+  hub_global_highlight_update();
+  return TRUE;
+}
+
 static gboolean s_active_conf(guint64 hub, const char *key, const char *val, GError **err) {
   db_vars_set(hub, key, val);
   listen_refresh();
@@ -962,6 +968,7 @@ struct var_t {
   V(active_udp_port,  1,1, f_int,          p_active_port,   NULL,          g_active_udp, s_active_conf,   NULL)\
   V(adc_blom,         1,1, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
   V(autoconnect,      0,1, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
+  V(highlight_words,  1,1, f_id,           p_id,            su_old,        NULL,         s_highlight,     NULL)\
   V(autorefresh,      1,0, f_autorefresh,  p_autorefresh,   NULL,          NULL,         NULL,            "3600")\
   V(backlog,          1,1, f_backlog,      p_backlog,       NULL,          NULL,         NULL,            "0")\
   V(chat_only,        1,1, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\

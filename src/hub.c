@@ -505,6 +505,18 @@ void hub_global_nfochange(void) {
 }
 
 
+// Re-apply highlight pattern for all hubs (called when highlight_words changes)
+void hub_global_highlight_update(void) {
+  GHashTableIter i;
+  g_hash_table_iter_init(&i, hubs);
+  hub_t *h;
+  while(g_hash_table_iter_next(&i, NULL, (gpointer *)&h)) {
+    if(h->tab)
+      uit_hub_setnick(h->tab);
+  }
+}
+
+
 // Get the current active IP used for this hub. Returns NULL if we're not active.
 char *hub_ip(hub_t *hub) {
   if(!net_is_connected(hub->net))

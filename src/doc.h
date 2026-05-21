@@ -465,6 +465,11 @@ static const doc_set_t doc_sets[] = {
   "Maximum file hashing speed. See the `download_rate' setting for allowed"
   " formats for this setting."
 },
+{ "highlight_words", 1, "<string>",
+  "Comma-separated list of words to highlight in hub chat, in addition to your"
+  " own nick. Words are case-insensitive. Can be set globally or per-hub."
+  " Example: `set highlight_words friend1,friend2,important'"
+},
 { "hubname", 1, "<string>",
   "The name of the currently opened hub tab. This is a user-assigned name, and"
   " is only used within ncdc itself. This is the same name as given to the"
