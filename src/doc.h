@@ -570,6 +570,13 @@ static const doc_set_t doc_sets[] = {
   " `user:password'. Leave unset if the proxy requires no authentication."
   " Example: `set proxy_auth myuser:mypassword'"
 },
+{ "proxy_tls", 1, "<boolean>",
+  "Enable TLS encryption for the SOCKS5 proxy connection. When true, ncdc"
+  " establishes a TLS tunnel to the proxy before the SOCKS5 handshake,"
+  " protecting the proxy credentials and all traffic."
+  " Requires the proxy server to support TLS (e.g. Dante with TLS, V2Ray)."
+  " Default: false. Example: `set proxy_tls true'"
+},
 { "reconnect_timeout", 1, "<interval>",
   "The time to wait before automatically reconnecting to a hub. Set to 0 to"
   " disable automatic reconnect."

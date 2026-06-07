@@ -1012,6 +1012,7 @@ struct var_t {
   V(proxy_auth,       1,1, f_id,           p_id,            su_old,        NULL,         NULL,            NULL)\
   V(proxy_host,       1,1, f_id,           p_id,            su_old,        NULL,         NULL,            NULL)\
   V(proxy_port,       1,1, f_int,          p_int,           NULL,          NULL,         NULL,            "1080")\
+  V(proxy_tls,        1,1, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
   V(reconnect_timeout,1,1, f_interval,     p_interval,      su_old,        NULL,         NULL,            "30")\
   V(sendfile,         1,0, f_sendfile,     p_sendfile,      su_bool,       NULL,         NULL,            "true")\
   V(share_emptydirs,  1,0, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
