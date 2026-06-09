@@ -161,8 +161,8 @@ void ui_logwindow_add(ui_logwindow_t *lw, const char *msg) {
   // For chat messages and /me's, prefix every line with "<nick>" or "** nick"
   char *prefix = NULL;
   char *tmp;
-  if( (*msg == '<' && (tmp = strchr(msg, '>')) != NULL && *(++tmp) == ' ') || // <nick>
-      (*msg == '*' && msg[1] == '*' && msg[2] == ' ' && (tmp = strchr(msg+3, ' ')) != NULL)) // ** nick
+  if( (*msg == '<' && (tmp = (char *)strchr(msg, '>')) != NULL && *(++tmp) == ' ') || // <nick>
+      (*msg == '*' && msg[1] == '*' && msg[2] == ' ' && (tmp = (char *)strchr(msg+3, ' ')) != NULL)) // ** nick
     prefix = g_strndup(msg, tmp-msg+1);
 
   // Split \r?\n? stuff into separate log lines

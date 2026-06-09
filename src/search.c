@@ -500,7 +500,7 @@ gboolean search_handle_udp(const char *addr, char *pack, int len) {
   if(len < 10 || !search_list)
     return TRUE;
 
-  pack = g_memdup(pack, len+1);
+  pack = g_memdup2(pack, len+1);
   char *msg = pack;
   msg[len] = 0;
 

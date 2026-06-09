@@ -117,7 +117,7 @@ static char *p_interval(const char *val, GError **err) {
 static char *p_ip(const char *val, GError **err) {
   struct in_addr i4 = ip4_any;
   struct in6_addr i6 = ip6_any;
-  char *sep = strchr(val, ',');
+  char *sep = (char *)strchr(val, ',');
   if(sep) *sep = 0;
   if(ip4_isvalid(val))
     i4 = ip4_pack(val);

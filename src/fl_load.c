@@ -286,7 +286,7 @@ static fl_list_t *fl_load_parse(int fd, bz_stream *bzs, gboolean local, GError *
       fl_load_token(x, r, err);
     }
     if(*err) {
-      g_prefix_error(err, "Line %"G_GUINT32_FORMAT":%"G_GUINT64_FORMAT": ", x->x.line, x->x.byte);
+      g_prefix_error(err, "Line %"G_GUINT32_FORMAT":%"G_GUINT64_FORMAT": ", x->x.line, (guint64)x->x.byte);
       break;
     }
   }

@@ -221,7 +221,7 @@ void uit_fl_queue(guint64 uid, gboolean force, const char *sel, ui_tab_t *parent
       if(match)
         matchqueue((tab_t *)tab, NULL);
     } else if(match)
-      fl_load_async(fn, loadmatch, g_memdup(&uid, 8));
+      fl_load_async(fn, loadmatch, g_memdup2(&uid, 8));
   } else {
     g_return_if_fail(u); // the caller should have checked this
     dl_queue_addlist(u, sel, parent, open, match);

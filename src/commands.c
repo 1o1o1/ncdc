@@ -1099,7 +1099,7 @@ static gboolean listsettings(guint64 hub, const char *hubname, const char *key) 
   GPatternSpec *p = pat ? g_pattern_spec_new(pat) : NULL;
   g_free(pat);
   for(i=0; i<VAR_END; i++) {
-    if((hub ? vars[i].hub : vars[i].global) && (!pat || g_pattern_match_string(p, vars[i].name))) {
+    if((hub ? vars[i].hub : vars[i].global) && (!pat || g_pattern_spec_match_string(p, vars[i].name))) {
       if(n++ == 0)
         ui_m(NULL, 0, "");
       print_var(hub, hubname, i);
@@ -1201,7 +1201,7 @@ static void setunset_sug(gboolean set, gboolean h, const char *val, char **sug) 
     hub = tab->hub->id;
   }
 
-  char *sep = strchr(val, ' ');
+  char *sep = (char *)strchr(val, ' ');
 
   // Suggest var name
   if(!set || !sep) {
