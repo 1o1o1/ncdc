@@ -577,6 +577,11 @@ static const doc_set_t doc_sets[] = {
   " Requires the proxy server to support TLS (e.g. Dante with TLS, V2Ray)."
   " Default: false. Example: `set proxy_tls true'"
 },
+{ "proxy_transfers", 1, "<boolean>",
+  "Route file transfer connections through the SOCKS5 proxy when proxy_host"
+  " is set. Only works in passive mode. Default: false."
+  " Example: `set proxy_transfers true'"
+},
 { "reconnect_timeout", 1, "<interval>",
   "The time to wait before automatically reconnecting to a hub. Set to 0 to"
   " disable automatic reconnect."

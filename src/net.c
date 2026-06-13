@@ -82,6 +82,9 @@ struct net_t {
   char *socks_host;         // target host to tunnel to
   unsigned short socks_port;// target port to tunnel to
   guint64 socks_hub_id;     // hub id for per-hub proxy_auth lookup
+  int socks_step;           // negotiation step
+  unsigned char socks_rbuf[512]; // read buffer for async parsing
+  int socks_rlen;           // bytes in socks_rbuf
   void (*socks_cb)(net_t *, const char *); // callback after tunnel established
 
   gnutls_session_t tls;       // state ASY,SYN,DIS (only if tls is enabled)
@@ -1176,128 +1179,52 @@ static void dnscon_tryconn(net_t *n);
 
 /* ---- SOCKS5 implementation (synchronous handshake) -------------------- */
 
-// Blocking recv that keeps reading until exactly 'len' bytes received.
-// Uses proxy_tls if available, handles GNUTLS_E_AGAIN retries.
-static gboolean socks5_recvall(net_t *n, unsigned char *buf, int len) {
-  int got = 0;
-  while(got < len) {
-    int r;
-    if(n->proxy_tls) {
-      do { r = gnutls_record_recv(n->proxy_tls, buf + got, len - got); }
-      while(r == GNUTLS_E_AGAIN || r == GNUTLS_E_INTERRUPTED);
-    } else {
-      r = recv(n->sock, buf + got, len - got, 0);
-    }
+/* ---- Async SOCKS5 state machine ---------------------------------------- */
+
+static gboolean socks5_readable(gpointer dat);
+static gboolean socks5_writable(gpointer dat);
+
+#define SOCKS5_ST_GREETING  0  // waiting for greeting reply
+#define SOCKS5_ST_AUTH      1  // waiting for auth reply
+#define SOCKS5_ST_CONNECT   2  // waiting for CONNECT reply
+
+// Send bytes non-blocking. Returns TRUE if all sent, FALSE on EAGAIN/error.
+static gboolean socks5_send_nb(net_t *n, const unsigned char *buf, int len) {
+  while(len > 0) {
+    int r = n->proxy_tls
+      ? gnutls_record_send(n->proxy_tls, buf, len)
+      : send(n->sock, buf, len, 0);
     if(r <= 0) return FALSE;
+    buf += r; len -= r;
+  }
+  return TRUE;
+}
+
+// Drain socket into n->socks_rbuf until EAGAIN or full.
+// Returns number of newly received bytes, -1 on fatal error.
+static int socks5_drain(net_t *n) {
+  unsigned char tmp[512];
+  int got = 0;
+  while(n->socks_rlen < (int)sizeof(n->socks_rbuf)) {
+    int r = n->proxy_tls
+      ? gnutls_record_recv(n->proxy_tls, tmp, sizeof(tmp))
+      : recv(n->sock, tmp, sizeof(tmp), 0);
+    if(r < 0) {
+      int e = n->proxy_tls ? r : errno;
+      if(e == GNUTLS_E_AGAIN || e == EAGAIN || e == EWOULDBLOCK || e == EINTR)
+        break;
+      return -1;
+    }
+    if(r == 0) return -1;
+    int copy = MIN(r, (int)sizeof(n->socks_rbuf) - n->socks_rlen);
+    memcpy(n->socks_rbuf + n->socks_rlen, tmp, copy);
+    n->socks_rlen += copy;
     got += r;
   }
-  return TRUE;
+  return got;
 }
 
-static gboolean socks5_sendall(net_t *n, const unsigned char *buf, int len) {
-  int sent = 0;
-  while(sent < len) {
-    int r = n->proxy_tls
-      ? gnutls_record_send(n->proxy_tls, buf + sent, len - sent)
-      : send(n->sock, buf + sent, len - sent, 0);
-    if(r <= 0) return FALSE;
-    sent += r;
-  }
-  return TRUE;
-}
-
-// Called by GLib when proxy socket becomes readable — data is ready.
-// We switch to blocking for the handshake (tiny amounts), then restore.
-static gboolean socks5_do_handshake(gpointer dat) {
-  net_t *n = dat;
-  n->socksrc = 0;
-
-  unsigned char buf[260];
-  int flags = fcntl(n->sock, F_GETFL, 0);
-
-  // Switch to blocking for the handshake
-  fcntl(n->sock, F_SETFL, flags & ~O_NONBLOCK);
-
-  // ---- Proxy TLS handshake (if proxy_tls enabled) ----
-  if(var_get_bool(n->socks_hub_id, VAR_proxy_tls)) {
-    gnutls_certificate_credentials_t proxy_cred;
-    gnutls_certificate_allocate_credentials(&proxy_cred);
-    // No CA set — skip server certificate verification (proxy may use self-signed cert)
-
-    gnutls_session_t ptls;
-    gnutls_init(&ptls, GNUTLS_CLIENT);
-    gnutls_credentials_set(ptls, GNUTLS_CRD_CERTIFICATE, proxy_cred);
-    gnutls_set_default_priority(ptls);
-    gnutls_transport_set_int(ptls, n->sock);
-    gnutls_handshake_set_timeout(ptls, 10000);
-    int r;
-    do { r = gnutls_handshake(ptls); } while(r == GNUTLS_E_AGAIN || r == GNUTLS_E_INTERRUPTED);
-    gnutls_certificate_free_credentials(proxy_cred);
-    if(r < 0) {
-      gnutls_deinit(ptls);
-      fcntl(n->sock, F_SETFL, flags);
-      char *e = g_strdup_printf("SOCKS5 proxy TLS error: %s", gnutls_strerror(r));
-      n->cb_err(n, NETERR_CONN, e); g_free(e); return FALSE;
-    }
-    n->proxy_tls = ptls;
-
-    // Now send SOCKS5 greeting over TLS
-    char *auth2 = var_get(n->socks_hub_id, VAR_proxy_auth);
-    unsigned char greeting[4];
-    greeting[0] = 0x05;
-    if(auth2 && strchr(auth2, ':')) {
-      greeting[1] = 0x02; greeting[2] = 0x00; greeting[3] = 0x02;
-      socks5_sendall(n, greeting, 4);
-    } else {
-      greeting[1] = 0x01; greeting[2] = 0x00;
-      socks5_sendall(n, greeting, 3);
-    }
-  }
-
-  // ---- Step 0: read greeting reply ----
-  if(!socks5_recvall(n, buf, 2)) {
-    fcntl(n->sock, F_SETFL, flags);
-    char *e = g_strdup_printf("SOCKS5: greeting read error: %s", g_strerror(errno));
-    n->cb_err(n, NETERR_CONN, e); g_free(e); return FALSE;
-  }
-  if(buf[0] != 0x05) {
-    fcntl(n->sock, F_SETFL, flags);
-    n->cb_err(n, NETERR_CONN, "SOCKS5: not a SOCKS5 server"); return FALSE;
-  }
-  if(buf[1] == 0xFF) {
-    fcntl(n->sock, F_SETFL, flags);
-    n->cb_err(n, NETERR_CONN, "SOCKS5: no acceptable auth method"); return FALSE;
-  }
-
-  // ---- Step 1: auth if required ----
-  if(buf[1] == 0x02) {
-    char *auth = var_get(n->socks_hub_id, VAR_proxy_auth);
-    char user[256] = "", pass[256] = "";
-    if(auth) {
-      char *colon = strchr(auth, ':');
-      if(colon) {
-        size_t ulen = MIN((size_t)(colon - auth), sizeof(user)-1);
-        strncpy(user, auth, ulen); user[ulen] = '\0';
-        strncpy(pass, colon+1, sizeof(pass)-1);
-      }
-    }
-    size_t ulen = strlen(user), plen = strlen(pass);
-    unsigned char apkt[3 + 255 + 255];
-    int alen = 0;
-    apkt[alen++] = 0x01;
-    apkt[alen++] = (unsigned char)ulen;
-    memcpy(apkt+alen, user, ulen); alen += ulen;
-    apkt[alen++] = (unsigned char)plen;
-    memcpy(apkt+alen, pass, plen); alen += plen;
-    socks5_sendall(n, apkt, alen);
-
-    if(!socks5_recvall(n, buf, 2) || buf[1] != 0x00) {
-      fcntl(n->sock, F_SETFL, flags);
-      n->cb_err(n, NETERR_CONN, "SOCKS5: authentication failed"); return FALSE;
-    }
-  }
-
-  // ---- Step 2: CONNECT to target ----
+static void socks5_send_connect_pkt(net_t *n) {
   const char *host = n->socks_host;
   unsigned short port = n->socks_port;
   size_t hlen = strlen(host);
@@ -1307,47 +1234,172 @@ static gboolean socks5_do_handshake(gpointer dat) {
   memcpy(pkt+5, host, hlen);
   pkt[5+hlen]   = (port >> 8) & 0xFF;
   pkt[5+hlen+1] =  port       & 0xFF;
-  socks5_sendall(n, pkt, 5+hlen+2);
+  socks5_send_nb(n, pkt, 5+hlen+2);
   g_free(pkt);
+}
 
-  // Read CONNECT reply header (4 bytes: VER REP RSV ATYP)
-  if(!socks5_recvall(n, buf, 4)) {
-    fcntl(n->sock, F_SETFL, flags);
-    char *e = g_strdup_printf("SOCKS5: CONNECT reply read error: %s", g_strerror(errno));
-    n->cb_err(n, NETERR_CONN, e); g_free(e); return FALSE;
-  }
-  if(buf[1] != 0x00) {
-    fcntl(n->sock, F_SETFL, flags);
-    const char *msgs[] = {
-      "SOCKS5: general failure", "SOCKS5: connection not allowed",
-      "SOCKS5: network unreachable", "SOCKS5: host unreachable",
-      "SOCKS5: connection refused", "SOCKS5: TTL expired",
-      "SOCKS5: command not supported", "SOCKS5: address type not supported"
-    };
-    int code = buf[1];
-    n->cb_err(n, NETERR_CONN, (code >= 1 && code <= 8) ? msgs[code-1] : "SOCKS5: unknown error");
-    return FALSE;
-  }
-  // Drain BND.ADDR + BND.PORT
-  if     (buf[3] == 0x01) socks5_recvall(n, buf, 4+2);      // IPv4 + port
-  else if(buf[3] == 0x04) socks5_recvall(n, buf, 16+2);     // IPv6 + port
-  else if(buf[3] == 0x03) {
-    socks5_recvall(n, buf, 1);
-    socks5_recvall(n, buf+1, buf[0]+2);                      // domain + port
-  }
-
-  // Restore non-blocking
-  fcntl(n->sock, F_SETFL, flags);
-
-  // Tunnel established — hand off to normal connection handling
+static void socks5_finish(net_t *n) {
+  if(n->socksrc) { g_source_remove(n->socksrc); n->socksrc = 0; }
   void (*cb)(net_t *, const char *) = n->socks_cb;
   g_free(n->socks_host); n->socks_host = NULL;
-  n->socks_cb = NULL;
-  n->socksrc  = 0;             // we're returning FALSE so GLib removes this source
-  n->state    = NETST_CON;     // net_connected() requires NETST_IDL or NETST_CON
-
+  n->socks_cb  = NULL;
+  n->socks_rlen = 0;
+  n->state = NETST_CON;
   net_connected(n, n->sock, n->addr, FALSE);
   if(cb) cb(n, NULL);
+}
+
+static void socks5_error_nb(net_t *n, const char *msg) {
+  if(n->socksrc) { g_source_remove(n->socksrc); n->socksrc = 0; }
+  g_free(n->socks_host); n->socks_host = NULL;
+  n->socks_cb  = NULL;
+  n->socks_rlen = 0;
+  n->cb_err(n, NETERR_CONN, msg);
+}
+
+static void socks5_reschedule(net_t *n, GIOCondition cond) {
+  if(n->socksrc) { g_source_remove(n->socksrc); n->socksrc = 0; }
+  GSource *src = fdsrc_new(n->sock, cond);
+  g_source_set_callback(src, socks5_readable, n, NULL);
+  n->socksrc = g_source_attach(src, NULL);
+  g_source_unref(src);
+}
+
+static gboolean socks5_readable(gpointer dat) {
+  net_t *n = dat;
+  n->socksrc = 0;
+
+  if(socks5_drain(n) < 0) {
+    socks5_error_nb(n, "SOCKS5: connection reset");
+    return FALSE;
+  }
+
+  if(n->socks_step == SOCKS5_ST_GREETING) {
+    if(n->socks_rlen < 2) { socks5_reschedule(n, G_IO_IN); return FALSE; }
+    unsigned char *b = n->socks_rbuf;
+    if(b[0] != 0x05) { socks5_error_nb(n, "SOCKS5: not a SOCKS5 server"); return FALSE; }
+    if(b[1] == 0xFF) { socks5_error_nb(n, "SOCKS5: no acceptable auth method"); return FALSE; }
+    n->socks_rlen = 0;
+
+    if(b[1] == 0x02) {
+      // Need auth
+      char *auth = var_get(n->socks_hub_id, VAR_proxy_auth);
+      char user[256] = "", pass[256] = "";
+      if(auth) {
+        char *colon = strchr(auth, ':');
+        if(colon) {
+          size_t ulen = MIN((size_t)(colon-auth), sizeof(user)-1);
+          strncpy(user, auth, ulen); user[ulen] = '\0';
+          strncpy(pass, colon+1, sizeof(pass)-1);
+        }
+      }
+      size_t ulen = strlen(user), plen = strlen(pass);
+      unsigned char apkt[3+255+255];
+      int alen = 0;
+      apkt[alen++] = 0x01;
+      apkt[alen++] = (unsigned char)ulen;
+      memcpy(apkt+alen, user, ulen); alen += ulen;
+      apkt[alen++] = (unsigned char)plen;
+      memcpy(apkt+alen, pass, plen); alen += plen;
+      socks5_send_nb(n, apkt, alen);
+      n->socks_step = SOCKS5_ST_AUTH;
+      socks5_reschedule(n, G_IO_IN);
+    } else {
+      // No auth, send CONNECT
+      socks5_send_connect_pkt(n);
+      n->socks_step = SOCKS5_ST_CONNECT;
+      socks5_reschedule(n, G_IO_IN);
+    }
+    return FALSE;
+  }
+
+  if(n->socks_step == SOCKS5_ST_AUTH) {
+    if(n->socks_rlen < 2) { socks5_reschedule(n, G_IO_IN); return FALSE; }
+    if(n->socks_rbuf[1] != 0x00) { socks5_error_nb(n, "SOCKS5: authentication failed"); return FALSE; }
+    n->socks_rlen = 0;
+    socks5_send_connect_pkt(n);
+    n->socks_step = SOCKS5_ST_CONNECT;
+    socks5_reschedule(n, G_IO_IN);
+    return FALSE;
+  }
+
+  if(n->socks_step == SOCKS5_ST_CONNECT) {
+    // Need at least 4 bytes for header
+    if(n->socks_rlen < 4) { socks5_reschedule(n, G_IO_IN); return FALSE; }
+    unsigned char *b = n->socks_rbuf;
+    if(b[1] != 0x00) {
+      const char *msgs[] = {
+        "SOCKS5: general failure", "SOCKS5: connection not allowed",
+        "SOCKS5: network unreachable", "SOCKS5: host unreachable",
+        "SOCKS5: connection refused", "SOCKS5: TTL expired",
+        "SOCKS5: command not supported", "SOCKS5: address type not supported"
+      };
+      int code = b[1];
+      socks5_error_nb(n, (code >= 1 && code <= 8) ? msgs[code-1] : "SOCKS5: unknown error");
+      return FALSE;
+    }
+    // Calculate total reply size to check we have it all
+    int need = 4;
+    if     (b[3] == 0x01) need += 4+2;
+    else if(b[3] == 0x04) need += 16+2;
+    else if(b[3] == 0x03) {
+      if(n->socks_rlen < 5) { socks5_reschedule(n, G_IO_IN); return FALSE; }
+      need += 1 + b[4] + 2;
+    }
+    if(n->socks_rlen < need) { socks5_reschedule(n, G_IO_IN); return FALSE; }
+
+    // Done!
+    socks5_finish(n);
+    return FALSE;
+  }
+
+  return FALSE;
+}
+
+static gboolean socks5_writable(gpointer dat) {
+  net_t *n = dat;
+  n->socksrc = 0;
+
+  // Socket is writable — do TLS handshake if needed, then send greeting
+  if(n->proxy_tls == NULL && var_get_bool(n->socks_hub_id, VAR_proxy_tls)) {
+    // Need to do TLS first — but we'll do it blocking since GnuTLS handshake
+    // is typically fast (local proxy) and doing it async is very complex
+    int flags = fcntl(n->sock, F_GETFL, 0);
+    fcntl(n->sock, F_SETFL, flags & ~O_NONBLOCK);
+
+    gnutls_certificate_credentials_t proxy_cred;
+    gnutls_certificate_allocate_credentials(&proxy_cred);
+    gnutls_session_t ptls;
+    gnutls_init(&ptls, GNUTLS_CLIENT);
+    gnutls_credentials_set(ptls, GNUTLS_CRD_CERTIFICATE, proxy_cred);
+    gnutls_set_default_priority(ptls);
+    gnutls_transport_set_int(ptls, n->sock);
+    gnutls_handshake_set_timeout(ptls, 5000);
+    int r;
+    do { r = gnutls_handshake(ptls); } while(r == GNUTLS_E_AGAIN || r == GNUTLS_E_INTERRUPTED);
+    gnutls_certificate_free_credentials(proxy_cred);
+    fcntl(n->sock, F_SETFL, flags);
+    if(r < 0) {
+      gnutls_deinit(ptls);
+      char *e = g_strdup_printf("SOCKS5 proxy TLS error: %s", gnutls_strerror(r));
+      socks5_error_nb(n, e); g_free(e); return FALSE;
+    }
+    n->proxy_tls = ptls;
+  }
+
+  // Send greeting
+  char *auth = var_get(n->socks_hub_id, VAR_proxy_auth);
+  unsigned char greeting[4];
+  greeting[0] = 0x05;
+  if(auth && strchr(auth, ':')) {
+    greeting[1] = 0x02; greeting[2] = 0x00; greeting[3] = 0x02;
+    socks5_send_nb(n, greeting, 4);
+  } else {
+    greeting[1] = 0x01; greeting[2] = 0x00;
+    socks5_send_nb(n, greeting, 3);
+  }
+  n->socks_step = SOCKS5_ST_GREETING;
+  socks5_reschedule(n, G_IO_IN);
   return FALSE;
 }
 
@@ -1357,28 +1409,13 @@ static void socks5_start(net_t *n, const char *dest_host, unsigned short dest_po
   n->socks_port   = dest_port;
   n->socks_cb     = cb;
   n->socks_hub_id = hub_id;
+  n->socks_rlen   = 0;
   n->state        = NETST_SOCKS;
 
-  // If no proxy TLS — send greeting now (plain SOCKS5)
-  // If proxy TLS — greeting will be sent after TLS handshake in socks5_do_handshake
-  if(!var_get_bool(hub_id, VAR_proxy_tls)) {
-    char *auth = var_get(hub_id, VAR_proxy_auth);
-    unsigned char greeting[4];
-    greeting[0] = 0x05;
-    if(auth && strchr(auth, ':')) {
-      greeting[1] = 0x02; greeting[2] = 0x00; greeting[3] = 0x02;
-      socks5_sendall(n, greeting, 4);
-    } else {
-      greeting[1] = 0x01; greeting[2] = 0x00;
-      socks5_sendall(n, greeting, 3);
-    }
-  }
-
-  // For proxy TLS: wait for writable (to send ClientHello first)
-  // For plain SOCKS5: wait for readable (server greeting response already triggered by our greeting)
-  GIOCondition cond = var_get_bool(hub_id, VAR_proxy_tls) ? G_IO_OUT : G_IO_IN;
-  GSource *src = fdsrc_new(n->sock, cond);
-  g_source_set_callback(src, socks5_do_handshake, n, NULL);
+  // Always start with G_IO_OUT — socket is writable after TCP connect
+  // socks5_writable will do TLS (if needed) then send greeting
+  GSource *src = fdsrc_new(n->sock, G_IO_OUT);
+  g_source_set_callback(src, socks5_writable, n, NULL);
   n->socksrc = g_source_attach(src, NULL);
   g_source_unref(src);
 }
@@ -1659,7 +1696,8 @@ void net_disconnect(net_t *n) {
   case NETST_SOCKS:
     if(n->socksrc) { g_source_remove(n->socksrc); n->socksrc = 0; }
     g_free(n->socks_host); n->socks_host = NULL;
-    n->socks_cb = NULL;
+    n->socks_cb  = NULL;
+    n->socks_rlen = 0;
     break;
 
   case NETST_ASY:
