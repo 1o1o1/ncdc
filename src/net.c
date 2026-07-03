@@ -89,6 +89,7 @@ struct net_t {
 
   gnutls_session_t tls;       // state ASY,SYN,DIS (only if tls is enabled)
   gnutls_session_t proxy_tls; // proxy TLS session (wraps raw socket, under hub tls)
+  gnutls_certificate_credentials_t proxy_tls_cred; // credentials for proxy_tls, freed after handshake
   void (*cb_handshake)(net_t *, const char *, int); // state ASY, called after complete handshake.
   void (*cb_shutdown)(net_t *); // state DIS, called after complete disconnect.
 
@@ -1183,6 +1184,8 @@ static void dnscon_tryconn(net_t *n);
 
 static gboolean socks5_readable(gpointer dat);
 static gboolean socks5_writable(gpointer dat);
+static gboolean socks5_tls_step_cb(gpointer dat);
+static void socks5_send_greeting(net_t *n);
 
 #define SOCKS5_ST_GREETING  0  // waiting for greeting reply
 #define SOCKS5_ST_AUTH      1  // waiting for auth reply
@@ -1356,38 +1359,51 @@ static gboolean socks5_readable(gpointer dat) {
   return FALSE;
 }
 
-static gboolean socks5_writable(gpointer dat) {
-  net_t *n = dat;
-  n->socksrc = 0;
+// Async proxy TLS handshake step. Returns TRUE to continue (call again on
+// next I/O event), FALSE when done (success -> proceeds to greeting, or
+// error -> socks5_error_nb already called).
+static gboolean socks5_tls_handshake_step(net_t *n) {
+  int r = gnutls_handshake(n->proxy_tls);
 
-  // Socket is writable — do TLS handshake if needed, then send greeting
-  if(n->proxy_tls == NULL && var_get_bool(n->socks_hub_id, VAR_proxy_tls)) {
-    // Need to do TLS first — but we'll do it blocking since GnuTLS handshake
-    // is typically fast (local proxy) and doing it async is very complex
-    int flags = fcntl(n->sock, F_GETFL, 0);
-    fcntl(n->sock, F_SETFL, flags & ~O_NONBLOCK);
-
-    gnutls_certificate_credentials_t proxy_cred;
-    gnutls_certificate_allocate_credentials(&proxy_cred);
-    gnutls_session_t ptls;
-    gnutls_init(&ptls, GNUTLS_CLIENT);
-    gnutls_credentials_set(ptls, GNUTLS_CRD_CERTIFICATE, proxy_cred);
-    gnutls_set_default_priority(ptls);
-    gnutls_transport_set_int(ptls, n->sock);
-    gnutls_handshake_set_timeout(ptls, 5000);
-    int r;
-    do { r = gnutls_handshake(ptls); } while(r == GNUTLS_E_AGAIN || r == GNUTLS_E_INTERRUPTED);
-    gnutls_certificate_free_credentials(proxy_cred);
-    fcntl(n->sock, F_SETFL, flags);
-    if(r < 0) {
-      gnutls_deinit(ptls);
-      char *e = g_strdup_printf("SOCKS5 proxy TLS error: %s", gnutls_strerror(r));
-      socks5_error_nb(n, e); g_free(e); return FALSE;
-    }
-    n->proxy_tls = ptls;
+  if(!r) {
+    // Handshake successful
+    gnutls_certificate_free_credentials(n->proxy_tls_cred);
+    n->proxy_tls_cred = NULL;
+    return FALSE; // signal: done, proceed to send greeting
   }
 
-  // Send greeting
+  if(gnutls_error_is_fatal(r)) {
+    gnutls_certificate_free_credentials(n->proxy_tls_cred);
+    n->proxy_tls_cred = NULL;
+    gnutls_deinit(n->proxy_tls);
+    n->proxy_tls = NULL;
+    char *e = g_strdup_printf("SOCKS5 proxy TLS error: %s", gnutls_strerror(r));
+    socks5_error_nb(n, e);
+    g_free(e);
+    return FALSE; // signal: done (error)
+  }
+
+  // Need more I/O — reschedule based on direction GnuTLS wants
+  GIOCondition cond = gnutls_record_get_direction(n->proxy_tls) ? G_IO_OUT : G_IO_IN;
+  if(n->socksrc) { g_source_remove(n->socksrc); n->socksrc = 0; }
+  GSource *src = fdsrc_new(n->sock, cond);
+  g_source_set_callback(src, socks5_tls_step_cb, n, NULL);
+  n->socksrc = g_source_attach(src, NULL);
+  g_source_unref(src);
+  return TRUE; // signal: still in progress
+}
+
+static gboolean socks5_tls_step_cb(gpointer dat) {
+  net_t *n = dat;
+  n->socksrc = 0;
+  if(!socks5_tls_handshake_step(n)) {
+    if(n->proxy_tls) // handshake succeeded (not freed by error path)
+      socks5_send_greeting(n);
+  }
+  return FALSE;
+}
+
+static void socks5_send_greeting(net_t *n) {
   char *auth = var_get(n->socks_hub_id, VAR_proxy_auth);
   unsigned char greeting[4];
   greeting[0] = 0x05;
@@ -1398,6 +1414,31 @@ static gboolean socks5_writable(gpointer dat) {
     greeting[1] = 0x01; greeting[2] = 0x00;
     socks5_send_nb(n, greeting, 3);
   }
+  n->socks_step = SOCKS5_ST_GREETING;
+  socks5_reschedule(n, G_IO_IN);
+}
+
+static gboolean socks5_writable(gpointer dat) {
+  net_t *n = dat;
+  n->socksrc = 0;
+
+  // Socket is writable — start TLS handshake if needed, then send greeting
+  if(n->proxy_tls == NULL && var_get_bool(n->socks_hub_id, VAR_proxy_tls)) {
+    gnutls_certificate_allocate_credentials(&n->proxy_tls_cred);
+    gnutls_init(&n->proxy_tls, GNUTLS_CLIENT);
+    gnutls_credentials_set(n->proxy_tls, GNUTLS_CRD_CERTIFICATE, n->proxy_tls_cred);
+    gnutls_set_default_priority(n->proxy_tls);
+    gnutls_transport_set_int(n->proxy_tls, n->sock);
+    gnutls_handshake_set_timeout(n->proxy_tls, 15000);
+
+    if(socks5_tls_handshake_step(n))
+      return FALSE; // in progress, will continue via socks5_tls_step_cb
+    if(!n->proxy_tls)
+      return FALSE; // handshake failed, error already reported
+    // else: fell through — handshake completed synchronously on first try
+  }
+
+  socks5_send_greeting(n);
   n->socks_step = SOCKS5_ST_GREETING;
   socks5_reschedule(n, G_IO_IN);
   return FALSE;
@@ -1728,6 +1769,10 @@ void net_disconnect(net_t *n) {
   if(n->proxy_tls) {
     gnutls_deinit(n->proxy_tls);
     n->proxy_tls = NULL;
+  }
+  if(n->proxy_tls_cred) {
+    gnutls_certificate_free_credentials(n->proxy_tls_cred);
+    n->proxy_tls_cred = NULL;
   }
   if(n->sock) {
     close(n->sock);
