@@ -1209,9 +1209,11 @@ static int socks5_drain(net_t *n) {
   unsigned char tmp[512];
   int got = 0;
   while(n->socks_rlen < (int)sizeof(n->socks_rbuf)) {
+    int space = (int)sizeof(n->socks_rbuf) - n->socks_rlen;
+    int want = MIN(space, (int)sizeof(tmp));
     int r = n->proxy_tls
-      ? gnutls_record_recv(n->proxy_tls, tmp, sizeof(tmp))
-      : recv(n->sock, tmp, sizeof(tmp), 0);
+      ? gnutls_record_recv(n->proxy_tls, tmp, want)
+      : recv(n->sock, tmp, want, 0);
     if(r < 0) {
       int e = n->proxy_tls ? r : errno;
       if(e == GNUTLS_E_AGAIN || e == EAGAIN || e == EWOULDBLOCK || e == EINTR)
@@ -1219,10 +1221,10 @@ static int socks5_drain(net_t *n) {
       return -1;
     }
     if(r == 0) return -1;
-    int copy = MIN(r, (int)sizeof(n->socks_rbuf) - n->socks_rlen);
-    memcpy(n->socks_rbuf + n->socks_rlen, tmp, copy);
-    n->socks_rlen += copy;
+    memcpy(n->socks_rbuf + n->socks_rlen, tmp, r);
+    n->socks_rlen += r;
     got += r;
+    if(r < want) break; // socket drained for now
   }
   return got;
 }
