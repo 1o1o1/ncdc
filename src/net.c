@@ -175,6 +175,10 @@ static ssize_t tls_pull(gnutls_transport_ptr_t dat, void *buf, size_t len) {
       gnutls_transport_set_errno(n->tls, gnutls_error_is_fatal(r) ? EIO : EAGAIN);
       return -1;
     }
+    if(r > 0) {
+      ratecalc_add(&net_in, r);
+      ratecalc_add(&n->rate_in, r);
+    }
     return r;
   }
   r = recv(n->sock, buf, len, 0);
@@ -214,7 +218,9 @@ static int low_recv(net_t *n, char *buf, int len, const char **err) {
     return -1;
   }
 
-  if(!n->tls && !n->proxy_tls) {
+  /* Count here when not going through n->tls (tls_pull counts that path).
+     Includes plain TCP and proxy_tls-only connections. */
+  if(!n->tls) {
     ratecalc_add(&net_in, r);
     ratecalc_add(&n->rate_in, r);
   }
@@ -230,6 +236,10 @@ static ssize_t tls_push(gnutls_transport_ptr_t dat, const void *buf, size_t len)
     if(r < 0) {
       gnutls_transport_set_errno(n->tls, gnutls_error_is_fatal(r) ? EIO : EAGAIN);
       return -1;
+    }
+    if(r > 0) {
+      ratecalc_add(&net_out, r);
+      ratecalc_add(&n->rate_out, r);
     }
     return r;
   }
@@ -263,10 +273,13 @@ static int low_send(net_t *n, const char *buf, int len, const char **err) {
   if(n->state != NETST_DIS)
     time(&n->timeout_last);
   if(r < 0) {
-    *err = n->tls ? gnutls_strerror(r) : g_strerror(errno);
+    *err = n->tls ? gnutls_strerror(r) :
+           n->proxy_tls ? gnutls_strerror(r) :
+           g_strerror(errno);
     return -1;
   }
 
+  /* Count here when not going through n->tls (tls_push counts that path). */
   if(!n->tls) {
     ratecalc_add(&net_out, r);
     ratecalc_add(&n->rate_out, r);
@@ -565,6 +578,7 @@ static void syn_thread(gpointer dat, gpointer udat) {
   g_mutex_lock(&s->lock);
   int sock = s->net->sock;
   gboolean tls = !!s->net->tls;
+  gboolean proxy_tls = !!s->net->proxy_tls;
   g_mutex_unlock(&s->lock);
 
   if(sock && !s->cancel && s->upl) {
@@ -573,7 +587,8 @@ static void syn_thread(gpointer dat, gpointer udat) {
       fadv_init(&adv, s->fd, lseek(s->fd, 0, SEEK_CUR), VAR_FFC_UPLOAD);
 
 #ifdef HAVE_SENDFILE
-    if(!tls && var_get_bool(0, VAR_sendfile))
+    /* sendfile writes raw bytes to the socket and would bypass proxy_tls */
+    if(!tls && !proxy_tls && var_get_bool(0, VAR_sendfile))
       syn_upload_sendfile(s, sock, &adv);
 #endif
     if(s->left > 0 && !s->err && !s->cancel)

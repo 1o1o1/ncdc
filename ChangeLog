@@ -1,3 +1,15 @@
+1.25.0.10 - 2026-07-24
+	Maked proxy TLS handshake fully async
+	Fix potential data corruption in socks5_drain buffer handling
+	Fix reliable SOCKS5 writes and move proxy TLS handshake to worker threads
+	Fix count traffic rates when using proxy_tls
+	Fix highlight_words regex so nick mentions keep working
+
+1.25.0.9 - 2026-06-14
+	Add SOCKS5 over TLS support (/hset proxy_tls true)
+	Add proxy_transfers setting and rewrite SOCKS5 as async state machine (/hset proxy_transfers true)
+	Add highlight_words setting for chat notifications (/hset highlight_words nick,word)
+
 1.25.0.8 - 2026-04-02
 	Add SOCKS5 proxy indicator in hub separator bar
 	Add ignore list with nick/pattern filtering (/ignore, /unignore, /ignorelist)

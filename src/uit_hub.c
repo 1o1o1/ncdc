@@ -61,9 +61,8 @@ int uit_hub_log_checkchat(void *dat, char *nick, char *msg) {
   if(!t->highlight)
     return 0;
 
-  // Check nick itself and message body
-  return (g_regex_match(t->highlight, nick, 0, NULL) ||
-          g_regex_match(t->highlight, msg,  0, NULL)) ? 1 : 0;
+  /* Match message body only (not sender nick). */
+  return g_regex_match(t->highlight, msg, 0, NULL) ? 1 : 0;
 }
 
 
@@ -222,30 +221,42 @@ void uit_hub_setnick(ui_tab_t *tab) {
   g_free(t->nick);
   if(t->highlight)
     g_regex_unref(t->highlight);
+  t->highlight = NULL;
   t->nick = g_strdup(tab->hub->nick);
   char *name = g_regex_escape_string(tab->hub->nick, -1);
   char *extra = var_get(tab->hub->id, VAR_highlight_words);
-  char *pattern;
+
+  /* Lookaround boundaries instead of \b (ASCII-only \w breaks Cyrillic). */
+  GString *p = g_string_new(NULL);
+  g_string_append_printf(p, "(?<![0-9A-Za-z_])%s(?![0-9A-Za-z_])", name);
+
   if(extra && *extra) {
-    // Build pattern: \bnick\b|\bword1\b|\bword2\b ...
-    GString *p = g_string_new(NULL);
-    g_string_append_printf(p, "\\b%s\\b", name);
     char **words = g_strsplit(extra, ",", -1);
     for(int i = 0; words[i]; i++) {
       char *w = g_strstrip(words[i]);
       if(*w) {
         char *ew = g_regex_escape_string(w, -1);
-        g_string_append_printf(p, "|%s", ew);
+        g_string_append_printf(p, "|(?<![0-9A-Za-z_])%s(?![0-9A-Za-z_])", ew);
         g_free(ew);
       }
     }
     g_strfreev(words);
-    pattern = g_string_free(p, FALSE);
-  } else
-    pattern = g_strdup_printf("\\b%s\\b", name);
-  t->highlight = g_regex_new(pattern, G_REGEX_CASELESS|G_REGEX_OPTIMIZE, 0, NULL);
+  }
+
+  GError *err = NULL;
+  t->highlight = g_regex_new(p->str, G_REGEX_CASELESS | G_REGEX_OPTIMIZE, 0, &err);
+  if(!t->highlight) {
+    g_warning("highlight regex failed (%s), falling back to nick only",
+              err ? err->message : "unknown");
+    if(err)
+      g_error_free(err);
+    char *fallback = g_strdup_printf("(?<![0-9A-Za-z_])%s(?![0-9A-Za-z_])", name);
+    t->highlight = g_regex_new(fallback, G_REGEX_CASELESS | G_REGEX_OPTIMIZE, 0, NULL);
+    g_free(fallback);
+  }
+
+  g_string_free(p, TRUE);
   g_free(name);
-  g_free(pattern);
 }
 
 
