@@ -93,6 +93,7 @@ struct net_t {
   gnutls_session_t tls;       // state ASY,SYN,DIS (only if tls is enabled)
   gnutls_session_t proxy_tls; // proxy TLS session (wraps raw socket, under hub tls)
   gnutls_certificate_credentials_t proxy_tls_cred; // credentials for proxy_tls, freed after handshake
+  gboolean proxy_tls_busy; // TRUE while worker owns session/fd until proxy_tls_done
   void (*cb_handshake)(net_t *, const char *, int); // state ASY, called after complete handshake.
   void (*cb_shutdown)(net_t *); // state DIS, called after complete disconnect.
 
@@ -1442,34 +1443,44 @@ static gboolean socks5_readable(gpointer dat) {
 
 typedef struct {
   net_t *n;
+  /* Snapshots: n->sock / n->proxy_tls may be reassigned on a fast reconnect
+     before proxy_tls_done runs on the main thread. */
+  int sock;
+  gnutls_session_t tls;
   gboolean ok;
   char *err; /* NULL on success */
 } proxy_tls_result_t;
 
 /* Runs entirely in a worker thread. Socket is temporarily set to blocking
    mode so gnutls_handshake() can run to completion off the main thread
-   (both I/O waits and CPU-heavy crypto stay off the UI event loop). */
+   (both I/O waits and CPU-heavy crypto stay off the UI event loop).
+   Uses res->sock/res->tls snapshots only — never re-reads n->sock/proxy_tls. */
 static void proxy_tls_thread(gpointer dat, gpointer udat) {
   net_t *n = dat;
   proxy_tls_result_t *res = g_new0(proxy_tls_result_t, 1);
   res->n = n;
+  res->sock = n->sock;
+  res->tls = n->proxy_tls;
 
-  int flags = fcntl(n->sock, F_GETFL, 0);
+  int flags = fcntl(res->sock, F_GETFL, 0);
   if(flags >= 0)
-    fcntl(n->sock, F_SETFL, flags & ~O_NONBLOCK);
+    fcntl(res->sock, F_SETFL, flags & ~O_NONBLOCK);
 
   int r;
-  do { r = gnutls_handshake(n->proxy_tls); }
+  do { r = gnutls_handshake(res->tls); }
   while(r == GNUTLS_E_AGAIN || r == GNUTLS_E_INTERRUPTED);
 
   if(flags >= 0)
-    fcntl(n->sock, F_SETFL, flags);
+    fcntl(res->sock, F_SETFL, flags);
 
   if(r < 0)
     res->err = g_strdup_printf("SOCKS5 proxy TLS error: %s", gnutls_strerror(r));
   else
     res->ok = TRUE;
 
+  /* Do NOT clear proxy_tls_busy here — that would let net_disconnect
+     deinit/close before proxy_tls_done runs (double-free). busy is owned
+     by the main thread and cleared only in proxy_tls_done. */
   g_idle_add(proxy_tls_done, res);
 }
 
@@ -1478,20 +1489,41 @@ static gboolean proxy_tls_done(gpointer dat) {
   proxy_tls_result_t *res = dat;
   net_t *n = res->n;
 
-  /* Connection may have been torn down while the worker was running. */
+  /* Worker is finished: it no longer touches res->tls / res->sock. */
+  n->proxy_tls_busy = FALSE;
+
+  /* Cancelled while the worker was running. net_disconnect left session/fd
+     alone because proxy_tls_busy was set — finish cleanup here using the
+     snapshots, and only clear n->* if they still point at those objects. */
   if(n->state != NETST_SOCKS) {
+    if(res->tls)
+      gnutls_deinit(res->tls);
+    if(n->proxy_tls == res->tls)
+      n->proxy_tls = NULL;
+    if(n->proxy_tls_cred) {
+      gnutls_certificate_free_credentials(n->proxy_tls_cred);
+      n->proxy_tls_cred = NULL;
+    }
+    if(res->sock > 0)
+      close(res->sock);
+    if(n->sock == res->sock)
+      n->sock = 0;
     net_unref(n);
     g_free(res->err);
     g_free(res);
     return FALSE;
   }
 
-  gnutls_certificate_free_credentials(n->proxy_tls_cred);
-  n->proxy_tls_cred = NULL;
+  if(n->proxy_tls_cred) {
+    gnutls_certificate_free_credentials(n->proxy_tls_cred);
+    n->proxy_tls_cred = NULL;
+  }
 
   if(!res->ok) {
-    gnutls_deinit(n->proxy_tls);
-    n->proxy_tls = NULL;
+    if(n->proxy_tls) {
+      gnutls_deinit(n->proxy_tls);
+      n->proxy_tls = NULL;
+    }
     socks5_error_nb(n, res->err ? res->err : "SOCKS5 proxy TLS error");
     g_free(res->err);
   } else {
@@ -1552,6 +1584,7 @@ static gboolean socks5_writable(gpointer dat) {
     gnutls_transport_set_int(n->proxy_tls, n->sock);
     gnutls_handshake_set_timeout(n->proxy_tls, 15000);
 
+    n->proxy_tls_busy = TRUE; /* main-thread flag; worker must not clear it */
     net_ref(n); /* keep alive while the worker thread runs */
     g_thread_pool_push(proxy_tls_pool, n, NULL);
     return FALSE; /* resumes via proxy_tls_done() on the main thread */
@@ -1894,17 +1927,23 @@ void net_disconnect(net_t *n) {
     gnutls_deinit(n->tls);
     n->tls = NULL;
   }
-  if(n->proxy_tls) {
-    gnutls_deinit(n->proxy_tls);
-    n->proxy_tls = NULL;
-  }
-  if(n->proxy_tls_cred) {
-    gnutls_certificate_free_credentials(n->proxy_tls_cred);
-    n->proxy_tls_cred = NULL;
-  }
-  if(n->sock) {
-    close(n->sock);
-    n->sock = 0;
+  /* Worker in gnutls_handshake() owns the session and needs the fd until it
+     returns. Only shutdown() was done in the NETST_SOCKS case; deinit/close
+     are deferred to proxy_tls_done(). busy is cleared only on the main
+     thread there, so we cannot race into a double free. */
+  if(!n->proxy_tls_busy) {
+    if(n->proxy_tls) {
+      gnutls_deinit(n->proxy_tls);
+      n->proxy_tls = NULL;
+    }
+    if(n->proxy_tls_cred) {
+      gnutls_certificate_free_credentials(n->proxy_tls_cred);
+      n->proxy_tls_cred = NULL;
+    }
+    if(n->sock) {
+      close(n->sock);
+      n->sock = 0;
+    }
   }
   time(&n->timeout_last);
   if(s)
