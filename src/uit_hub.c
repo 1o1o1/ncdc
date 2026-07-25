@@ -61,8 +61,11 @@ int uit_hub_log_checkchat(void *dat, char *nick, char *msg) {
   if(!t->highlight)
     return 0;
 
-  /* Match message body only (not sender nick). */
-  return g_regex_match(t->highlight, msg, 0, NULL) ? 1 : 0;
+  /* Highlight if the sender nick matches highlight_words/own-nick pattern
+     (so watched users are visible when they speak), or if the message body
+     contains a match (mentions of you / highlight words). */
+  return (g_regex_match(t->highlight, nick, 0, NULL) ||
+          g_regex_match(t->highlight, msg,  0, NULL)) ? 1 : 0;
 }
 
 

@@ -72,8 +72,10 @@ CROSS COMPILING
 ## Added features
 
 - 256-color support for color settings
-- SOCKS5 proxy support with per-hub config and TLS (`proxy_host`, `proxy_port`, `proxy_auth`)
+- SOCKS5 proxy with per-hub config (`proxy_host`, `proxy_port`, `proxy_auth`)
+- Proxy TLS and transfers through proxy (`proxy_tls`, `proxy_transfers`)
 - Custom client name/version spoofing (`client_name`, `client_version`)
+- Chat highlight words in addition to own nick (`highlight_words`)
 - Ignore list with wildcard patterns (`/ignore`, `/unignore`, `/ignorelist`)
 
 ## Original project
